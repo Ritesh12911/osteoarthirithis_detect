@@ -1,0 +1,61 @@
+{
+  "model_type": "VotingClassifier (RF + GB + SVM)",
+  "feature_columns": [
+    "audio_rms",
+    "dominant_freq_hz",
+    "crepitus_score",
+    "joint_temp_c",
+    "temp_asymmetry",
+    "accel_rms_x",
+    "accel_rms_y",
+    "accel_rms_z",
+    "gyro_range_deg",
+    "step_symmetry",
+    "flex_angle_deg",
+    "flex_stiffness"
+  ],
+  "classes": {
+    "0": "Normal",
+    "1": "Early_OA"
+  },
+  "metrics": {
+    "RandomForest": {
+      "accuracy": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "auc": 1.0,
+      "cv_mean": 1.0,
+      "cv_std": 0.0
+    },
+    "GradientBoosting": {
+      "accuracy": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "auc": 1.0,
+      "cv_mean": 1.0,
+      "cv_std": 0.0
+    },
+    "SVM": {
+      "accuracy": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "auc": 1.0,
+      "cv_mean": 1.0,
+      "cv_std": 0.0
+    },
+    "Ensemble": {
+      "accuracy": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "auc": 1.0,
+      "cv_mean": 1.0,
+      "cv_std": 0.0
+    }
+  },
+  "version": "1.0.0",
+  "sih": "2026-PS-26004"
+}

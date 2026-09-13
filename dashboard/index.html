@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OA Detect 3D — AI-Assisted Early Osteoarthritis Detection | SIH 2026</title>
+  <meta name="description" content="AI-Assisted Early Detection System for Osteoarthritis Risk Markers — SIH 2026, PS-26004, MDoNER. Real-time 3D sensor monitoring via ESP32-S3." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Three.js & OrbitControls for 3D Knee Biomechanics -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── HAIKEI GENERATIVE FLUID BACKDROP ──────────────────────────────── -->
+  <div class="haikei-backdrop">
+    <div class="haikei-blobs"></div>
+    
+    <!-- Layer 1: Smooth fluid wave SVG inspired by Haikei -->
+    <svg class="haikei-svg haikei-wave-1" viewBox="0 0 900 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M0 320C120 280 240 380 360 360C480 340 600 200 720 220C840 240 900 300 960 320V600H0V320Z" fill="url(#haikei-grad-1)"/>
+      <defs>
+        <linearGradient id="haikei-grad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"/>
+          <stop offset="100%" stop-color="var(--color-secondary)" stop-opacity="0.04"/>
+        </linearGradient>
+      </defs>
+    </svg>
+
+    <!-- Layer 2: Organic contour wave SVG -->
+    <svg class="haikei-svg haikei-wave-2" viewBox="0 0 900 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M0 260C140 180 280 340 420 300C560 260 700 120 840 180C920 220 960 260 1000 280V600H0V260Z" fill="url(#haikei-grad-2)"/>
+      <defs>
+        <linearGradient id="haikei-grad-2" x1="100%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.12"/>
+          <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0.02"/>
+        </linearGradient>
+      </defs>
+    </svg>
+
+    <div class="topographic-mesh"></div>
+  </div>
+
+  <!-- ── HEADER ───────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-left">
+      <a href="#" class="logo">
+        <div class="logo-icon">
+          <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="12" stroke="url(#g1)" stroke-width="2.2"/>
+            <path d="M7 14 Q10.5 7 14 14 Q17.5 21 21 14" stroke="var(--color-primary)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <circle cx="14" cy="14" r="3" fill="var(--color-secondary)"/>
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="28" y2="28">
+                <stop stop-color="var(--color-primary)"/>
+                <stop offset="1" stop-color="var(--color-secondary)"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <span class="logo-title">OA<span class="accent">Detect</span> <span style="font-size: 14px; font-weight: 600; opacity: 0.8">3D</span></span>
+          <span class="logo-sub">SIH 2026 · PS-26004 · MDoNER</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="header-center">
+      <div class="status-bar">
+        <div class="status-indicator" id="conn-indicator">
+          <span class="dot" id="conn-dot"></span>
+          <span id="conn-text">Connecting...</span>
+        </div>
+        <div class="divider-v"></div>
+        <div class="status-pill" id="device-pill">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <rect x="1" y="3" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M4 3V2a2 2 0 014 0v1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+          </svg>
+          ESP32-S3 N16R8
+        </div>
+        <div class="status-pill" id="mode-pill">DEMO STREAM</div>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <select class="patient-select" id="patient-select" style="border-radius: 20px;">
+        <option value="PATIENT_001">Patient 001</option>
+        <option value="PATIENT_002">Patient 002</option>
+        <option value="ALL">All Cohort</option>
+      </select>
+      <button class="btn btn-demo" id="demo-btn" onclick="toggleDemo()">
+        <span class="btn-icon">▶</span> Live Simulation
+      </button>
+    </div>
+  </header>
+
+  <!-- ── REAL HARDWARE CONNECTOR ACTION BAR ────────────────────────────── -->
+  <div class="hardware-bar">
+    <div class="hardware-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+      </svg>
+      Hardware Bridge
+    </div>
+
+    <div class="connector-buttons">
+      <!-- Web Serial Button -->
+      <button class="btn-hardware" id="btn-web-serial" onclick="connectWebSerial()" title="Direct USB connection to ESP32-S3 COM Port">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+        <span>Connect USB Serial</span>
+      </button>
+
+      <!-- Web Bluetooth Button -->
+      <button class="btn-hardware" id="btn-web-ble" onclick="connectWebBluetooth()" title="Direct Bluetooth Low Energy connection">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m7 7 10 10-5 5V2l5 5L7 17"/>
+        </svg>
+        <span>Connect BLE</span>
+      </button>
+
+      <!-- Server WebSocket Button -->
+      <button class="btn-hardware active" id="btn-web-socket" onclick="reconnectWebSocket()" title="Wi-Fi / Local Server WebSocket bridge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
+        </svg>
+        <span>Server WebSocket (Live)</span>
+      </button>
+    </div>
+
+    <div class="hardware-flow-pills">
+      <span class="pin-chip active" id="chip-mic" title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">INMP441: GPIO 1,2,3</span>
+      <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">MLX90614: GPIO 8,9</span>
+      <span class="pin-chip active" id="chip-imu" title="I2C: SDA=GPIO8, SCL=GPIO9">MPU6050: GPIO 8,9</span>
+      <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">Flex: GPIO 4</span>
+      <span class="pin-chip active" id="chip-led" title="NeoPixel Status LED">LED: GPIO 48</span>
+    </div>
+  </div>
+
+  <!-- ── ALERT BANNER ─────────────────────────────────────────────────── -->
+  <div class="alert-banner" id="alert-banner" style="display:none">
+    <span class="alert-icon">⚠️</span>
+    <span id="alert-text">High OA Risk Marker Detected</span>
+    <button onclick="document.getElementById('alert-banner').style.display='none'">✕</button>
+  </div>
+
+  <!-- ── MAIN CONTENT ──────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- ── KPI CARDS ──────────────────────────────────────────────────── -->
+    <section class="kpi-row">
+
+      <!-- Risk Gauge Card -->
+      <div class="glass-card risk-card" id="risk-card">
+        <div class="kpi-label">OA Prediction Risk</div>
+        <div class="gauge-wrap">
+          <canvas id="gauge-canvas" width="180" height="100"></canvas>
+          <div class="gauge-value" id="gauge-value">--</div>
+          <div class="gauge-label" id="gauge-risk-level">INITIALIZING</div>
+        </div>
+        <div class="kpi-badge" id="risk-badge">—</div>
+      </div>
+
+      <!-- Joint Temperature -->
+      <div class="glass-card kpi-card">
+        <div>
+          <div class="kpi-icon temp-icon">🌡️</div>
+          <div class="kpi-label">Joint Temperature</div>
+          <div class="kpi-value" id="kv-temp">--.-°C</div>
+          <div class="kpi-delta" id="kd-temp">Baseline: 33.2°C</div>
+        </div>
+        <div class="kpi-bar-wrap"><div class="kpi-bar temp-bar" id="kb-temp"></div></div>
+      </div>
+
+      <!-- Crepitus Score -->
+      <div class="glass-card kpi-card">
+        <div>
+          <div class="kpi-icon">🔊</div>
+          <div class="kpi-label">Acoustic Crepitus</div>
+          <div class="kpi-value" id="kv-crepitus">-.-</div>
+          <div class="kpi-delta" id="kd-crepitus">300-800Hz Resonance</div>
+        </div>
+        <div class="kpi-bar-wrap"><div class="kpi-bar crep-bar" id="kb-crep"></div></div>
+      </div>
+
+      <!-- Flex / ROM -->
+      <div class="glass-card kpi-card">
+        <div>
+          <div class="kpi-icon">🦵</div>
+          <div class="kpi-label">Flexion Angle & ROM</div>
+          <div class="kpi-value" id="kv-rom">--°</div>
+          <div class="kpi-delta" id="kd-rom">Normal: 90–130°</div>
+        </div>
+        <div class="kpi-bar-wrap"><div class="kpi-bar rom-bar" id="kb-rom"></div></div>
+      </div>
+
+      <!-- Step Symmetry -->
+      <div class="glass-card kpi-card">
+        <div>
+          <div class="kpi-icon">🚶</div>
+          <div class="kpi-label">Gait Symmetry</div>
+          <div class="kpi-value" id="kv-gait">-.-</div>
+          <div class="kpi-delta" id="kd-gait">Normal: 0.90–1.00</div>
+        </div>
+        <div class="kpi-bar-wrap"><div class="kpi-bar gait-bar" id="kb-gait"></div></div>
+      </div>
+
+      <!-- Session Stats -->
+      <div class="glass-card kpi-card">
+        <div>
+          <div class="kpi-icon">📊</div>
+          <div class="kpi-label">Session Telemetry</div>
+          <div class="kpi-value" id="kv-count">0</div>
+          <div class="kpi-delta" id="kd-normal-oa">Normal: 0 | OA: 0</div>
+        </div>
+        <div class="kpi-bar-wrap"><div class="kpi-bar count-bar" id="kb-count"></div></div>
+      </div>
+
+    </section>
+
+    <!-- ── 3D KNEE JOINT & BIOMECHANICAL VISUALIZER ────────────────────── -->
+    <section class="viewport-row">
+
+      <!-- Interactive 3D Knee Model -->
+      <div class="glass-card" style="padding: 16px;">
+        <div class="panel-header" style="margin-bottom: 12px;">
+          <h2 class="panel-title">
+            <span class="panel-dot live-dot"></span>
+            3D Biomechanical Knee & Wearable Sensor Rig
+          </h2>
+          <span class="panel-subtitle">Interactive WebGL · Flexion & Thermal Heatmap</span>
+        </div>
+
+        <div class="three-container">
+          <canvas id="knee-canvas"></canvas>
+
+          <!-- 3D Viewport HUD Overlay -->
+          <div class="three-overlay">
+            <div class="three-badge-group">
+              <div class="three-badge">
+                <span>Joint Angle:</span>
+                <strong id="hud-angle">112°</strong>
+              </div>
+              <div class="three-badge">
+                <span>Capsule Heatmap:</span>
+                <strong id="hud-temp" style="color: var(--color-success)">33.2°C (Norm)</strong>
+              </div>
+              <div class="three-badge">
+                <span>Acoustic Wave:</span>
+                <strong id="hud-crep">Inactive</strong>
+              </div>
+            </div>
+
+            <div class="three-controls">
+              <button class="three-btn" id="btn-reset-cam" title="Reset 3D Camera">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+                </svg>
+              </button>
+              <button class="three-btn" id="btn-wireframe" title="Toggle Wireframe Mesh">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="m21 16-9 5-9-5V8l9-5 9 5v8z"/><path d="M12 3v18"/><path d="m3 8 9 5 9-5"/><path d="m3 16 9-5 9 5"/>
+                </svg>
+              </button>
+              <button class="three-btn" id="btn-autorotate" title="Toggle Orbit Auto-Rotation">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="three-legend-hud">
+            <span>🖱️ Drag to Rotate · Scroll to Zoom · Right Click to Pan</span>
+            <span>Femur / Patella / Tibia & Smart Exoskeleton</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Multi-Sensor Radar Comparison -->
+      <div class="glass-card" style="padding: 20px; display: flex; flex-direction: column;">
+        <div class="panel-header">
+          <h2 class="panel-title">🕸️ Multi-Sensor Biometric Radar</h2>
+          <span class="panel-subtitle">Normalized Joint Signature</span>
+        </div>
+        <div class="radar-wrap" style="flex: 1;">
+          <canvas id="radarChart"></canvas>
+        </div>
+        <div class="radar-legend">
+          <span class="legend-dot" style="background:var(--color-primary)"></span> Current Patient
+          <span class="legend-dot" style="background:var(--color-success)"></span> Normal Reference
+          <span class="legend-dot" style="background:var(--color-accent)"></span> OA Reference
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── MIDDLE ROW: CHARTS + COMPARISON ───────────────────────────── -->
+    <section class="charts-row">
+
+      <!-- Live Sensor Charts Panel -->
+      <div class="glass-card charts-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <span class="panel-dot live-dot"></span>
+            Real-Time Sensor Telemetry
+          </h2>
+          <div class="chart-tabs">
+            <button class="tab-btn active" onclick="switchChart('audio')">🔊 Audio</button>
+            <button class="tab-btn" onclick="switchChart('temp')">🌡️ Temp</button>
+            <button class="tab-btn" onclick="switchChart('imu')">📐 IMU</button>
+            <button class="tab-btn" onclick="switchChart('flex')">🦵 Flex</button>
+          </div>
+        </div>
+
+        <div class="chart-container" id="chart-audio">
+          <canvas id="audioChart"></canvas>
+        </div>
+        <div class="chart-container hidden" id="chart-temp">
+          <canvas id="tempChart"></canvas>
+        </div>
+        <div class="chart-container hidden" id="chart-imu">
+          <canvas id="imuChart"></canvas>
+        </div>
+        <div class="chart-container hidden" id="chart-flex">
+          <canvas id="flexChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Comparison Panel -->
+      <div class="glass-card comparison-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">📊 Baseline Comparison</h2>
+          <span class="panel-subtitle">Current vs Healthy vs OA Baseline</span>
+        </div>
+        <div class="comp-legend">
+          <div class="comp-legend-item"><span class="legend-dot bar-current"></span> Live</div>
+          <div class="comp-legend-item"><span class="legend-dot" style="background:var(--color-success)"></span> Normal</div>
+          <div class="comp-legend-item"><span class="legend-dot" style="background:var(--color-accent)"></span> Early OA</div>
+        </div>
+        <div class="comparison-grid" id="comparison-grid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── SENSOR HARDWARE TILES ──────────────────────────────────────── -->
+    <section class="sensor-cards-row">
+      <div class="glass-card sensor-card mic-card">
+        <div class="sensor-icon">🎙️</div>
+        <div class="sensor-name">INMP441 Microphone</div>
+        <div class="sensor-detail">I2S Interface · GPIO 1/2/3</div>
+        <div class="sensor-values">
+          <div class="sv-item"><span>RMS</span><strong id="sv-rms">--</strong></div>
+          <div class="sv-item"><span>Freq</span><strong id="sv-freq">-- Hz</strong></div>
+          <div class="sv-item"><span>Crep.</span><strong id="sv-crep">--</strong></div>
+        </div>
+        <div class="sensor-status" id="ss-mic">●&nbsp;Connected</div>
+      </div>
+
+      <div class="glass-card sensor-card temp-sensor-card">
+        <div class="sensor-icon">🌡️</div>
+        <div class="sensor-name">MLX90614 IR Temp</div>
+        <div class="sensor-detail">I2C Interface · GPIO 8/9</div>
+        <div class="sensor-values">
+          <div class="sv-item"><span>Joint</span><strong id="sv-joint-t">-- °C</strong></div>
+          <div class="sv-item"><span>Ambient</span><strong id="sv-amb-t">-- °C</strong></div>
+          <div class="sv-item"><span>Δ Temp</span><strong id="sv-temp-d">-- °C</strong></div>
+        </div>
+        <div class="sensor-status" id="ss-temp">●&nbsp;Connected</div>
+      </div>
+
+      <div class="glass-card sensor-card imu-card">
+        <div class="sensor-icon">📐</div>
+        <div class="sensor-name">MPU6050 IMU</div>
+        <div class="sensor-detail">I2C · GPIO 8/9 · 6-Axis</div>
+        <div class="sensor-values">
+          <div class="sv-item"><span>AccX</span><strong id="sv-ax">--</strong></div>
+          <div class="sv-item"><span>Gyro°</span><strong id="sv-gy">--</strong></div>
+          <div class="sv-item"><span>Symm.</span><strong id="sv-sym">--</strong></div>
+        </div>
+        <div class="sensor-status" id="ss-imu">●&nbsp;Connected</div>
+      </div>
+
+      <div class="glass-card sensor-card flex-card">
+        <div class="sensor-icon">🦵</div>
+        <div class="sensor-name">Flex Sensor</div>
+        <div class="sensor-detail">ADC · GPIO 4 · 10kΩ divider</div>
+        <div class="sensor-values">
+          <div class="sv-item"><span>Angle</span><strong id="sv-angle">-- °</strong></div>
+          <div class="sv-item"><span>Stiff.</span><strong id="sv-stiff">--</strong></div>
+          <div class="sv-item"><span>ROM</span><strong id="sv-rom2">--</strong></div>
+        </div>
+        <div class="sensor-status" id="ss-flex">●&nbsp;Connected</div>
+      </div>
+
+      <div class="glass-card sensor-card esp-card">
+        <div class="sensor-icon">🔌</div>
+        <div class="sensor-name">ESP32-S3 N16R8</div>
+        <div class="sensor-detail">WiFi 802.11b/g/n · BLE 5.0</div>
+        <div class="sensor-values">
+          <div class="sv-item"><span>Bus</span><strong id="sv-mode">WiFi/BLE</strong></div>
+          <div class="sv-item"><span>Samples</span><strong id="sv-samples">0</strong></div>
+          <div class="sv-item"><span>Rate</span><strong id="sv-rate">2 Hz</strong></div>
+        </div>
+        <div class="sensor-status" id="ss-esp">●&nbsp;Stream Active</div>
+      </div>
+    </section>
+
+    <!-- ── CLINICAL LOG TABLE ─────────────────────────────────────────── -->
+    <section class="glass-card log-panel">
+      <div class="panel-header">
+        <h2 class="panel-title">📋 Clinical Telemetry & Inference Log</h2>
+        <button class="btn-clear" onclick="clearLog()">Clear History</button>
+      </div>
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Patient</th>
+              <th>Classification</th>
+              <th>Risk Score</th>
+              <th>Joint Temp</th>
+              <th>Flex ROM</th>
+              <th>Crepitus</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody">
+            <tr class="empty-row"><td colspan="7">Waiting for sensor feed...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── REALTIME COLORS FLOATING DOCK ─────────────────────────────────── -->
+  <div class="palette-dock" id="palette-dock">
+    <div class="palette-label">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 7 7c0 2-1 3-3 3h-1a2 2 0 0 0-2 2v1a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H6a3 3 0 0 1-3-3 7 7 0 0 1 7-7z"/>
+      </svg>
+      Palette:
+    </div>
+    <div class="color-swatch swatch-cyberpunk active" onclick="setPalette('cyberpunk')" title="Cyberpunk Clinical (Cyan/Purple)"></div>
+    <div class="color-swatch swatch-emerald" onclick="setPalette('emerald')" title="Bioluminescent Emerald (Green/Teal)"></div>
+    <div class="color-swatch swatch-arctic" onclick="setPalette('arctic')" title="Deep Arctic Frost (Ice/Indigo)"></div>
+    <div class="color-swatch swatch-solar" onclick="setPalette('solar')" title="Thermal Diagnostic (Amber/Rose)"></div>
+    <div class="color-swatch swatch-amethyst" onclick="setPalette('amethyst')" title="Royal Amethyst (Violet/Pink)"></div>
+  </div>
+
+  <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <span>SIH 2026 · Problem Statement 26004 · MDoNER</span>
+    <span class="divider-v"></span>
+    <span>AI-Assisted Early Osteoarthritis Detection System · North Eastern Region</span>
+    <span class="divider-v"></span>
+    <span id="footer-time">—</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
