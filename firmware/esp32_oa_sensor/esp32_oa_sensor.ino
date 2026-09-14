@@ -57,7 +57,7 @@
 #include <math.h>
 
 // ─── BLE FALLBACK (uncomment to enable BLE instead of WiFi) ──────────────────
-// #define USE_BLE
+#define USE_BLE
 #ifdef USE_BLE
   #include <NimBLEDevice.h>
   #include <NimBLEServer.h>
@@ -107,9 +107,9 @@ FlexFeatures readFlexFeatures();
 void sendData(AudioFeatures& audio, TempFeatures& temp, IMUFeatures& imu, FlexFeatures& flex);
 
 // ─── WIFI CONFIG ──────────────────────────────────────────────────────────────
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";      // ← Change this
-const char* WIFI_PASS     = "YOUR_WIFI_PASSWORD";   // ← Change this
-const char* SERVER_URL    = "http://192.168.1.100:5000/api/data"; // ← Change to your PC IP
+const char* WIFI_SSID     = "Infinix NOTE 50S 5G";      // ← Change this
+const char* WIFI_PASS     = "1234554321";   // ← Change this
+const char* SERVER_URL    = "http://:5000/api/data"; // ← Change to your PC IP
 
 // ─── PIN CONFIG ───────────────────────────────────────────────────────────────
 #define I2S_SCK_PIN     1

@@ -781,3 +781,882 @@ body {
   .main { padding: 18px; }
   .palette-dock { bottom: 12px; right: 12px; }
 }
+
+/* ============================================================
+   NEW FEATURE STYLES — Feature Expansion v2.0
+   ============================================================ */
+
+/* ── OFFLINE BANNER ────────────────────────────────────────── */
+.offline-banner {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(244, 63, 94, 0.2));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  position: relative;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+  animation: pulse-border 2s infinite ease-in-out;
+}
+
+/* ── REPORT BUTTON IN HEADER ───────────────────────────────── */
+.btn-report {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(34, 211, 238, 0.15));
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  transition: all 0.25s ease;
+}
+.btn-report:hover {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.4), rgba(34, 211, 238, 0.3));
+  border-color: #a78bfa;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.35);
+}
+
+/* ── TAB NAVIGATION ────────────────────────────────────────── */
+.tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--glass-border);
+  position: sticky;
+  top: 72px;
+  z-index: 40;
+  overflow-x: auto;
+}
+.tab-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.tab-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+.tab-nav-btn.active {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 0 16px var(--color-primary-glow);
+}
+
+/* ── TAB CONTENT CONTAINERS ────────────────────────────────── */
+.tab-content {
+  display: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.tab-content.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── TAB HERO HEADERS ──────────────────────────────────────── */
+.tab-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 24px;
+  position: relative;
+}
+.tab-hero-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tab-hero-sub {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+#add-patient-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+/* ── MODAL OVERLAY & CARD ──────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.82);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.modal-card {
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 580px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px var(--color-primary-glow);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 14px;
+}
+.modal-header h3 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.modal-close:hover { color: #f43f5e; }
+
+.patient-form .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.patient-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.patient-form label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.patient-form input,
+.patient-form select,
+.patient-form textarea {
+  background: rgba(3, 7, 18, 0.6);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.patient-form input:focus,
+.patient-form select:focus,
+.patient-form textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 12px var(--color-primary-glow);
+}
+.patient-form .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 18px;
+}
+.btn-secondary {
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* ── PATIENTS GRID & CARDS ─────────────────────────────────── */
+.patient-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+.patient-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 22px;
+  backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+.patient-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--color-primary);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px var(--color-primary-glow);
+}
+.patient-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.patient-card-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.patient-card-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  color: #030712;
+}
+.patient-name-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.patient-id-sub {
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+}
+.patient-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  background: rgba(3, 7, 18, 0.4);
+  padding: 12px;
+  border-radius: 12px;
+}
+.patient-kpi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.patient-kpi-item span {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.patient-kpi-item strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.patient-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.btn-mini {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.btn-mini:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.btn-mini.primary {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.btn-mini.primary:hover {
+  background: var(--color-primary);
+  color: #030712;
+}
+.btn-mini.danger:hover {
+  border-color: #f43f5e;
+  color: #f43f5e;
+}
+
+/* ── COHORT VIEW ───────────────────────────────────────────── */
+.high-risk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.high-risk-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  border-radius: 12px;
+}
+.high-risk-patient {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.high-risk-tag {
+  background: #f43f5e;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.cohort-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+/* ── SPECTROGRAM LAYOUT ────────────────────────────────────── */
+.spectrogram-layout {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 20px;
+}
+@media (max-width: 1000px) {
+  .spectrogram-layout { grid-template-columns: 1fr; }
+}
+.spectrogram-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.spec-controls {
+  display: flex;
+  gap: 8px;
+}
+.spectrogram-container {
+  position: relative;
+  width: 100%;
+  height: 380px;
+  background: #020617;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+#spectrogram-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.spectrogram-y-labels {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: rgba(255, 255, 255, 0.45);
+}
+.spectrogram-y-labels .crep-label {
+  color: #f59e0b;
+  font-weight: 700;
+}
+.crep-band-marker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed rgba(245, 158, 11, 0.45);
+  pointer-events: none;
+}
+.spectrogram-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.spec-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.spec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.spectrogram-hud {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.spec-hud-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.spec-hud-item {
+  background: rgba(3, 7, 18, 0.5);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+}
+.spec-hud-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.spec-hud-val {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--color-primary);
+}
+.crep-event-log {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(3, 7, 18, 0.4);
+  padding: 8px;
+  border-radius: 10px;
+}
+.crep-event-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 2px solid #f59e0b;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── AI CLINICAL INSIGHTS ──────────────────────────────────── */
+.ai-subtabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 12px;
+}
+.ai-subtab {
+  padding: 8px 18px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ai-subtab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+.ai-subtab.active {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.ai-panel {
+  display: none;
+}
+.ai-panel.active {
+  display: block;
+  animation: fadeIn 0.25s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-card {
+  display: flex;
+  flex-direction: column;
+  height: 620px;
+  padding: 20px;
+}
+.llm-mode-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  font-weight: 600;
+  margin-right: 8px;
+}
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.chat-bubble {
+  display: flex;
+  gap: 12px;
+  max-width: 82%;
+  animation: fadeIn 0.2s ease;
+}
+.chat-bubble.assistant {
+  align-self: flex-start;
+}
+.chat-bubble.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.chat-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.chat-bubble.user .chat-avatar {
+  background: var(--color-primary);
+  color: #030712;
+}
+.chat-content {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid var(--glass-border);
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #e2e8f0;
+}
+.chat-bubble.user .chat-content {
+  background: var(--color-primary);
+  color: #030712;
+  font-weight: 500;
+  border-color: var(--color-primary);
+}
+.chat-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 14px;
+}
+.chat-suggestions {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.chat-suggest-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.chat-suggest-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-dim);
+}
+.chat-input-wrap {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.chat-input {
+  flex: 1;
+  background: rgba(3, 7, 18, 0.7);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.chat-input:focus {
+  border-color: var(--color-primary);
+}
+.chat-send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--color-primary);
+  border: none;
+  color: #030712;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.chat-send-btn:hover {
+  box-shadow: 0 0 16px var(--color-primary-glow);
+  transform: scale(1.04);
+}
+
+/* ── DIET & EXERCISE PANELS ────────────────────────────────── */
+.diet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+.diet-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.diet-card-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.food-pill-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.food-pill {
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.food-pill.good {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+.food-pill.bad {
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  color: #f43f5e;
+}
+.meal-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.meal-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: rgba(3, 7, 18, 0.4);
+  border-radius: 10px;
+  border-left: 3px solid var(--color-primary);
+}
+.meal-time {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+.meal-desc {
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.exercise-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 20px;
+}
+.exercise-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  transition: transform 0.25s, border-color 0.25s;
+}
+.exercise-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--color-secondary);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.exercise-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.exercise-name {
+  font-family: 'Outfit', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.exercise-diff-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+.exercise-diff-badge.low {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.exercise-diff-badge.medium {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.exercise-diff-badge.high {
+  background: rgba(244, 63, 94, 0.2);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+}
+.exercise-meta-row {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.exercise-meta-row strong {
+  color: var(--text-primary);
+}
+.exercise-instructions {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+/* ── REPORT TOAST ──────────────────────────────────────────── */
+.report-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px var(--color-primary-glow);
+  z-index: 2000;
+  font-size: 13px;
+  color: #fff;
+  animation: slideInUp 0.3s ease;
+}
+.report-toast button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── LOADING SPINNERS ──────────────────────────────────────── */
+.loading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

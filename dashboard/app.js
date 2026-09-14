@@ -729,6 +729,14 @@ function handleLiveData(payload) {
   if (inf.risk_level === 'CRITICAL' || inf.risk_level === 'HIGH') {
     showAlert(`⚠️ High OA Risk: Patient ${payload.patient_id} — Score: ${(riskScore * 100).toFixed(1)}%`);
   }
+
+  // 10. Cache reading for Offline PWA mode
+  try {
+    const cached = JSON.parse(localStorage.getItem('oadetect_cached_readings') || '[]');
+    cached.unshift(payload);
+    if (cached.length > 30) cached.pop();
+    localStorage.setItem('oadetect_cached_readings', JSON.stringify(cached));
+  } catch (e) {}
 }
 
 // ── KPI CARDS ──────────────────────────────────────────────────
@@ -1275,6 +1283,934 @@ function startClock() {
   }, 1000);
 }
 
+// ── FEATURE EXPANSION MODULES v2.0 ─────────────────────────────
+
+// ── 1. TAB ROUTER ──────────────────────────────────────────────
+let activeTab = 'monitor';
+function switchTab(tabId) {
+  activeTab = tabId;
+  document.querySelectorAll('.tab-nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.id === `tab-btn-${tabId}`);
+  });
+  document.querySelectorAll('.tab-content').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tabId}`);
+  });
+
+  if (tabId === 'patients') {
+    loadPatients();
+  } else if (tabId === 'cohort') {
+    loadCohortData();
+  } else if (tabId === 'spectrogram') {
+    initSpectrogramIfNeeded();
+  } else if (tabId === 'ai') {
+    checkLLMStatus();
+    if (activeAITab === 'diet') loadDietPlan();
+    else if (activeAITab === 'exercises') loadExercises();
+  }
+}
+
+// ── 2. PATIENT PROFILE MANAGER ─────────────────────────────────
+async function loadPatients() {
+  const grid = document.getElementById('patient-grid');
+  if (!grid) return;
+  try {
+    const res = await fetch(`${SERVER_URL}/api/patients`);
+    const data = await res.json();
+    const patients = data.patients || [];
+    renderPatientGrid(patients);
+    updatePatientSelect(patients);
+  } catch (err) {
+    console.warn('[PATIENT] Load error, using clinical demo profiles:', err);
+    const demoPatients = [
+      { patient_id: 'PATIENT_001', name: 'Rajesh Sen', age: 62, gender: 'Male', bmi: 28.4, oa_grade: '3', comorbidities: 'Hypertension, Prior Meniscus Tear', notes: 'Reports morning stiffness >45 mins, pain aggravated by stairs.' },
+      { patient_id: 'PATIENT_002', name: 'Sunita Devi', age: 54, gender: 'Female', bmi: 25.1, oa_grade: '1', comorbidities: 'Type 2 Diabetes', notes: 'Early crepitus detected in right patellofemoral joint.' },
+      { patient_id: 'PATIENT_003', name: 'Bipul Bora', age: 47, gender: 'Male', bmi: 23.8, oa_grade: '0', comorbidities: 'None', notes: 'Asymptomatic screening candidate.' }
+    ];
+    renderPatientGrid(demoPatients);
+    updatePatientSelect(demoPatients);
+  }
+}
+
+function updatePatientSelect(patients) {
+  const sel = document.getElementById('patient-select');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = patients.map(p => `<option value="${p.patient_id}">${p.name || p.patient_id} (${p.patient_id})</option>`).join('') + '<option value="ALL">All Cohort</option>';
+  if (cur && [...sel.options].some(o => o.value === cur)) {
+    sel.value = cur;
+  }
+}
+
+function renderPatientGrid(patients) {
+  const grid = document.getElementById('patient-grid');
+  if (!grid) return;
+  if (!patients.length) {
+    grid.innerHTML = '<div class="loading-placeholder"><span>No patients registered yet. Click "Add New Patient" above.</span></div>';
+    return;
+  }
+  grid.innerHTML = patients.map(p => {
+    const initials = (p.name || 'PT').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+    const grade = p.oa_grade !== undefined ? p.oa_grade : 'Unknown';
+    const gradeBadge = (grade === '3' || grade === '4') ? 'risk-critical' : (grade === '2') ? 'risk-high' : (grade === '1') ? 'risk-moderate' : 'risk-low';
+    return `
+      <div class="patient-card">
+        <div class="patient-card-header">
+          <div class="patient-card-info">
+            <div class="patient-card-avatar">${initials}</div>
+            <div>
+              <div class="patient-name-title">${escapeHtml(p.name || 'Anonymous Patient')}</div>
+              <div class="patient-id-sub">${p.patient_id}</div>
+            </div>
+          </div>
+          <span class="risk-mini ${gradeBadge}">KL ${grade}</span>
+        </div>
+        <div class="patient-kpi-row">
+          <div class="patient-kpi-item">
+            <span>Age / Sex</span>
+            <strong>${p.age || '--'} / ${p.gender || '--'}</strong>
+          </div>
+          <div class="patient-kpi-item">
+            <span>BMI</span>
+            <strong>${p.bmi ? `${p.bmi} kg/m²` : '--'}</strong>
+          </div>
+          <div class="patient-kpi-item">
+            <span>Comorbidities</span>
+            <strong title="${escapeHtml(p.comorbidities || 'None')}">${escapeHtml(p.comorbidities ? (p.comorbidities.length > 15 ? p.comorbidities.slice(0, 14) + '…' : p.comorbidities) : 'None')}</strong>
+          </div>
+        </div>
+        ${p.notes ? `<div style="font-size:12px;color:#94a3b8;line-height:1.4">${escapeHtml(p.notes)}</div>` : ''}
+        <div class="patient-card-actions">
+          <button class="btn-mini primary" onclick="selectPatientForMonitoring('${p.patient_id}')">
+            <span>▶ Monitor</span>
+          </button>
+          <button class="btn-mini" onclick="editPatient('${p.patient_id}')">
+            <span>✏ Edit</span>
+          </button>
+          <button class="btn-mini danger" onclick="deletePatient('${p.patient_id}')">
+            <span>🗑</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openPatientForm(patient = null) {
+  const modal = document.getElementById('patient-modal');
+  if (!modal) return;
+  const title = document.getElementById('patient-form-title');
+  if (title) title.textContent = patient ? 'Edit Patient Profile' : 'Add New Patient';
+
+  document.getElementById('pf-id').value = patient ? patient.patient_id : '';
+  document.getElementById('pf-pid').value = patient ? patient.patient_id : '';
+  document.getElementById('pf-pid').disabled = !!patient;
+  document.getElementById('pf-name').value = patient ? (patient.name || '') : '';
+  document.getElementById('pf-age').value = patient ? (patient.age || '') : '';
+  document.getElementById('pf-gender').value = patient ? (patient.gender || '') : '';
+  document.getElementById('pf-bmi').value = patient ? (patient.bmi || '') : '';
+  document.getElementById('pf-grade').value = patient ? (patient.oa_grade || 'Unknown') : 'Unknown';
+  document.getElementById('pf-comorbid').value = patient ? (patient.comorbidities || '') : '';
+  document.getElementById('pf-notes').value = patient ? (patient.notes || '') : '';
+
+  modal.style.display = 'flex';
+}
+
+function closePatientForm() {
+  const modal = document.getElementById('patient-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function savePatient(e) {
+  if (e) e.preventDefault();
+  const editId = document.getElementById('pf-id').value;
+  const patientId = document.getElementById('pf-pid').value.trim() || undefined;
+  const body = {
+    patient_id: editId || patientId,
+    name: document.getElementById('pf-name').value.trim(),
+    age: parseInt(document.getElementById('pf-age').value) || null,
+    gender: document.getElementById('pf-gender').value,
+    bmi: parseFloat(document.getElementById('pf-bmi').value) || null,
+    oa_grade: document.getElementById('pf-grade').value,
+    comorbidities: document.getElementById('pf-comorbid').value.trim(),
+    notes: document.getElementById('pf-notes').value.trim()
+  };
+
+  try {
+    const url = editId ? `${SERVER_URL}/api/patients/${editId}` : `${SERVER_URL}/api/patients`;
+    const method = editId ? 'PUT' : 'POST';
+    await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (err) {
+    console.warn('[PATIENT] Save error:', err);
+  }
+
+  closePatientForm();
+  loadPatients();
+}
+
+async function editPatient(patientId) {
+  try {
+    const res = await fetch(`${SERVER_URL}/api/patients/${patientId}`);
+    if (res.ok) {
+      const data = await res.json();
+      openPatientForm(data.patient || data);
+      return;
+    }
+  } catch (e) {}
+  openPatientForm({ patient_id: patientId, name: patientId });
+}
+
+async function deletePatient(patientId) {
+  if (!confirm(`Are you sure you want to delete patient ${patientId}?`)) return;
+  try {
+    await fetch(`${SERVER_URL}/api/patients/${patientId}`, { method: 'DELETE' });
+  } catch (e) {}
+  loadPatients();
+}
+
+function selectPatientForMonitoring(patientId) {
+  const sel = document.getElementById('patient-select');
+  if (sel) sel.value = patientId;
+  onPatientChange(patientId);
+  switchTab('monitor');
+}
+
+function onPatientChange(patientId) {
+  if (state.socket && state.socket.connected) {
+    state.socket.emit('subscribe', { patient_id: patientId });
+  }
+  clearLog();
+  console.log(`[PATIENT] Switched active patient to: ${patientId}`);
+}
+
+// ── 3. MULTI-PATIENT COHORT ANALYTICS ──────────────────────────
+let cohortChartInstance = null;
+async function loadCohortData() {
+  try {
+    const res = await fetch(`${SERVER_URL}/api/cohort`);
+    const data = await res.json();
+    renderCohortKPIs(data);
+    renderCohortChart(data);
+    renderHighRiskList(data.high_risk_patients || []);
+    renderCohortGrid(data.patients || []);
+  } catch (err) {
+    console.warn('[COHORT] Fetch error, using fallback:', err);
+    const mock = {
+      total_patients: 12,
+      high_risk_count: 4,
+      total_sessions: 148,
+      oa_readings_count: 52,
+      distribution: { normal: 6, early_oa: 4, critical: 2 },
+      high_risk_patients: [
+        { patient_id: 'PATIENT_001', name: 'Rajesh Sen', risk_score: 0.84, oa_grade: '3' },
+        { patient_id: 'PATIENT_005', name: 'Geeta Baruah', risk_score: 0.78, oa_grade: '3' },
+        { patient_id: 'PATIENT_008', name: 'Manish Kalita', risk_score: 0.72, oa_grade: '2' }
+      ],
+      patients: [
+        { patient_id: 'PATIENT_001', name: 'Rajesh Sen', age: 62, risk_score: 0.84, oa_grade: '3', sessions: 28 },
+        { patient_id: 'PATIENT_002', name: 'Sunita Devi', age: 54, risk_score: 0.38, oa_grade: '1', sessions: 14 },
+        { patient_id: 'PATIENT_003', name: 'Bipul Bora', age: 47, risk_score: 0.12, oa_grade: '0', sessions: 9 },
+        { patient_id: 'PATIENT_004', name: 'Ananya Roy', age: 59, risk_score: 0.45, oa_grade: '2', sessions: 19 },
+        { patient_id: 'PATIENT_005', name: 'Geeta Baruah', age: 68, risk_score: 0.78, oa_grade: '3', sessions: 32 },
+        { patient_id: 'PATIENT_006', name: 'Pranab Saikia', age: 51, risk_score: 0.22, oa_grade: '0', sessions: 8 }
+      ]
+    };
+    renderCohortKPIs(mock);
+    renderCohortChart(mock);
+    renderHighRiskList(mock.high_risk_patients);
+    renderCohortGrid(mock.patients);
+  }
+}
+
+function renderCohortKPIs(data) {
+  setText('cohort-pt-count', data.total_patients ?? data.patients?.length ?? 0);
+  setText('cohort-highrisk', data.high_risk_count ?? (data.high_risk_patients?.length ?? 0));
+  setText('cohort-sessions', data.total_sessions ?? 0);
+  setText('cohort-oa', data.oa_readings_count ?? 0);
+}
+
+function renderCohortChart(data) {
+  const ctx = document.getElementById('cohortChart')?.getContext('2d');
+  if (!ctx || typeof Chart === 'undefined') return;
+
+  const dist = data.distribution || { normal: 6, early_oa: 4, critical: 2 };
+  const labels = ['Normal (Low Risk)', 'Early OA (Moderate)', 'Advanced OA (High/Critical)'];
+  const vals = [dist.normal || 0, dist.early_oa || 0, dist.critical || 0];
+
+  if (cohortChartInstance) cohortChartInstance.destroy();
+
+  cohortChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Patients',
+        data: vals,
+        backgroundColor: [
+          'rgba(16, 185, 129, 0.7)',
+          'rgba(245, 158, 11, 0.7)',
+          'rgba(244, 63, 94, 0.7)'
+        ],
+        borderColor: ['#10b981', '#f59e0b', '#f43f5e'],
+        borderWidth: 1.5,
+        borderRadius: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(255, 255, 255, 0.06)' },
+          ticks: { color: '#94a3b8', stepSize: 1 }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: '#e2e8f0', font: { family: 'Inter', size: 11, weight: '600' } }
+        }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function renderHighRiskList(list) {
+  const container = document.getElementById('high-risk-list');
+  if (!container) return;
+  if (!list.length) {
+    container.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:12px">No high risk patients detected.</div>';
+    return;
+  }
+  container.innerHTML = list.slice(0, 3).map(p => `
+    <div class="high-risk-item">
+      <div class="high-risk-patient">
+        <span class="high-risk-tag">CRITICAL</span>
+        <div>
+          <div style="font-weight:700;color:#fff">${escapeHtml(p.name || p.patient_id)}</div>
+          <div style="font-size:11px;color:#94a3b8;font-family:'JetBrains Mono'">${p.patient_id} · KL Grade ${p.oa_grade || '3'}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-family:'JetBrains Mono';color:#f43f5e;font-weight:800;font-size:15px">${Math.round((p.risk_score || 0.8) * 100)}%</span>
+        <button class="btn-mini primary" onclick="selectPatientForMonitoring('${p.patient_id}')">Monitor</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderCohortGrid(patients) {
+  const container = document.getElementById('cohort-grid');
+  if (!container) return;
+  container.innerHTML = patients.map(p => {
+    const risk = p.risk_score || 0;
+    const riskBadge = risk > 0.6 ? 'risk-critical' : risk > 0.3 ? 'risk-moderate' : 'risk-low';
+    return `
+      <div class="patient-card" style="padding:16px">
+        <div class="patient-card-header">
+          <div>
+            <div style="font-weight:700;color:#fff">${escapeHtml(p.name || p.patient_id)}</div>
+            <div style="font-size:11px;color:#94a3b8">${p.patient_id} · Age ${p.age || '--'}</div>
+          </div>
+          <span class="risk-mini ${riskBadge}">${Math.round(risk * 100)}% Risk</span>
+        </div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8">
+          <span>Sessions: <strong>${p.sessions || 1}</strong></span>
+          <span>Grade: <strong>KL ${p.oa_grade || '0'}</strong></span>
+        </div>
+        <div class="patient-card-actions" style="margin-top:12px">
+          <button class="btn-mini primary" onclick="selectPatientForMonitoring('${p.patient_id}')">Live Feed</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── 4. ACOUSTIC SPECTROGRAM VIEWER ─────────────────────────────
+const specState = {
+  canvas: null,
+  ctx: null,
+  audioCtx: null,
+  analyser: null,
+  micStream: null,
+  micActive: false,
+  simActive: false,
+  simInterval: null,
+  fftChart: null,
+  crepEventsCount: 0
+};
+
+function initSpectrogramIfNeeded() {
+  const canvas = document.getElementById('spectrogram-canvas');
+  if (!canvas) return;
+  if (!specState.canvas) {
+    specState.canvas = canvas;
+    specState.ctx = canvas.getContext('2d', { willReadFrequently: true });
+    resizeSpectrogramCanvas();
+    window.addEventListener('resize', resizeSpectrogramCanvas);
+    initFFTBarChart();
+  }
+  if (!specState.micActive && !specState.simActive) {
+    toggleSimulatedSpectrogram();
+  }
+}
+
+function resizeSpectrogramCanvas() {
+  if (!specState.canvas) return;
+  const rect = specState.canvas.parentElement.getBoundingClientRect();
+  specState.canvas.width = rect.width || 600;
+  specState.canvas.height = rect.height || 380;
+  if (specState.ctx) {
+    specState.ctx.fillStyle = '#020617';
+    specState.ctx.fillRect(0, 0, specState.canvas.width, specState.canvas.height);
+  }
+}
+
+function initFFTBarChart() {
+  const canvas = document.getElementById('fftBarChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (specState.fftChart) return;
+
+  const binCount = 16;
+  const labels = ['100Hz','200Hz','300Hz','400Hz','500Hz','600Hz','700Hz','800Hz','1k','1.5k','2k','3k','4k','5k','6k','8k'];
+
+  specState.fftChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: new Array(binCount).fill(0),
+        backgroundColor: labels.map(l => (parseInt(l) >= 300 && parseInt(l) <= 800) ? 'rgba(245, 158, 11, 0.8)' : 'rgba(34, 211, 238, 0.6)'),
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { min: 0, max: 255, display: false },
+        x: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { display: false } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+async function toggleMicSpectrogram() {
+  const btn = document.getElementById('spec-mic-btn');
+  if (specState.micActive) {
+    if (specState.micStream) {
+      specState.micStream.getTracks().forEach(t => t.stop());
+      specState.micStream = null;
+    }
+    specState.micActive = false;
+    if (btn) btn.classList.remove('active');
+    document.getElementById('spec-live-dot')?.classList.remove('pulse');
+    return;
+  }
+
+  if (specState.simActive) toggleSimulatedSpectrogram();
+
+  try {
+    specState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    specState.analyser = specState.audioCtx.createAnalyser();
+    specState.analyser.fftSize = 1024;
+    specState.analyser.smoothingTimeConstant = 0.8;
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    specState.micStream = stream;
+    const source = specState.audioCtx.createMediaStreamSource(stream);
+    source.connect(specState.analyser);
+
+    specState.micActive = true;
+    if (btn) btn.classList.add('active');
+    document.getElementById('spec-live-dot')?.classList.add('pulse');
+
+    renderWaterfallLoop();
+  } catch (err) {
+    alert('Microphone access denied or unavailable: ' + err.message);
+  }
+}
+
+function toggleSimulatedSpectrogram() {
+  if (specState.simActive) {
+    clearInterval(specState.simInterval);
+    specState.simInterval = null;
+    specState.simActive = false;
+    return;
+  }
+
+  if (specState.micActive) toggleMicSpectrogram();
+
+  specState.simActive = true;
+  document.getElementById('spec-live-dot')?.classList.add('pulse');
+
+  const bufferLen = 512;
+  const mockFreqData = new Uint8Array(bufferLen);
+
+  specState.simInterval = setInterval(() => {
+    const crep = state.lastReading?.sensors?.microphone?.crepitus_score ?? (0.1 + Math.random() * 0.6);
+    const isBurst = Math.random() < (crep * 0.8);
+
+    for (let i = 0; i < bufferLen; i++) {
+      let val = Math.random() * 25;
+      if (i >= 15 && i <= 45 && isBurst) {
+        val += 90 + Math.random() * 140 * crep;
+      }
+      mockFreqData[i] = Math.min(255, val);
+    }
+
+    drawWaterfallSlice(mockFreqData);
+    updateSpectrogramHUD(mockFreqData, isBurst, crep);
+  }, 50);
+}
+
+function renderWaterfallLoop() {
+  if (!specState.micActive || !specState.analyser) return;
+  const bufferLen = specState.analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLen);
+
+  function draw() {
+    if (!specState.micActive) return;
+    specState.analyser.getByteFrequencyData(dataArray);
+    drawWaterfallSlice(dataArray);
+    updateSpectrogramHUD(dataArray, false, 0);
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function drawWaterfallSlice(freqArray) {
+  const { canvas, ctx } = specState;
+  if (!canvas || !ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.drawImage(canvas, 2, 0, w - 2, h, 0, 0, w - 2, h);
+
+  const colX = w - 2;
+  const numBins = Math.min(freqArray.length, 256);
+
+  for (let y = 0; y < h; y++) {
+    const binIdx = Math.floor(((h - 1 - y) / h) * numBins);
+    const val = freqArray[binIdx] || 0;
+    ctx.fillStyle = getSpectrogramColor(val);
+    ctx.fillRect(colX, y, 2, 1);
+  }
+}
+
+function getSpectrogramColor(val) {
+  if (val < 25) return '#020617';
+  if (val < 60) return '#0c4a6e';
+  if (val < 110) return '#0284c7';
+  if (val < 160) return '#22d3ee';
+  if (val < 210) return '#f59e0b';
+  return '#f43f5e';
+}
+
+function updateSpectrogramHUD(freqArray, isBurst, crepScore) {
+  let maxVal = 0;
+  let maxIdx = 0;
+  let crepBandEnergy = 0;
+  let totalEnergy = 0;
+
+  for (let i = 0; i < Math.min(freqArray.length, 128); i++) {
+    const v = freqArray[i];
+    totalEnergy += v;
+    if (v > maxVal) { maxVal = v; maxIdx = i; }
+    if (i >= 14 && i <= 40) crepBandEnergy += v;
+  }
+
+  const nyquist = 22050;
+  const domFreq = Math.round((maxIdx / freqArray.length) * nyquist);
+  const crepPct = totalEnergy > 0 ? Math.round((crepBandEnergy / totalEnergy) * 100) : 0;
+  const peakDb = Math.round(20 * Math.log10((maxVal || 1) / 255));
+
+  setText('spec-dom-freq', `${domFreq} Hz`);
+  setText('spec-crep-energy', `${crepPct}%`);
+  setText('spec-peak', `${peakDb} dB`);
+
+  if (specState.fftChart) {
+    const step = Math.floor(64 / 16);
+    const sampleVals = [];
+    for (let i = 0; i < 16; i++) sampleVals.push(freqArray[i * step] || 0);
+    specState.fftChart.data.datasets[0].data = sampleVals;
+    specState.fftChart.update('none');
+  }
+
+  if (crepPct > 45 || isBurst || crepScore > 0.55) {
+    specState.crepEventsCount++;
+    setText('spec-events', specState.crepEventsCount);
+    appendCrepEvent(domFreq, peakDb);
+  }
+}
+
+function appendCrepEvent(freq, db) {
+  const log = document.getElementById('crep-event-log');
+  if (!log) return;
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const div = document.createElement('div');
+  div.className = 'crep-event-row';
+  div.innerHTML = `<span>${time} · Burst</span><strong>${freq}Hz (${db}dB)</strong>`;
+  log.insertBefore(div, log.firstChild);
+  if (log.children.length > 8) log.removeChild(log.lastChild);
+}
+
+// ── 5. AI CLINICAL INSIGHTS (CHAT, DIET, REHAB) ────────────────
+let activeAITab = 'chat';
+
+function switchAITab(subtab) {
+  activeAITab = subtab;
+  document.querySelectorAll('.ai-subtab').forEach(b => b.classList.toggle('active', b.id === `ai-tab-${subtab}`));
+  document.querySelectorAll('.ai-panel').forEach(p => p.classList.toggle('active', p.id === `ai-panel-${subtab}`));
+
+  if (subtab === 'diet') loadDietPlan();
+  else if (subtab === 'exercises') loadExercises();
+  else if (subtab === 'chat') checkLLMStatus();
+}
+
+async function checkLLMStatus() {
+  try {
+    const res = await fetch(`${SERVER_URL}/api/llm/status`);
+    if (res.ok) {
+      const d = await res.json();
+      const badge = document.getElementById('llm-mode-badge');
+      if (badge) {
+        badge.textContent = d.has_api_key ? '● Gemini AI Active' : '● Rule-based Engine';
+        badge.style.color = d.has_api_key ? '#10b981' : '#38bdf8';
+      }
+    }
+  } catch (e) {}
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  const messages = document.getElementById('chat-messages');
+  const userBubble = document.createElement('div');
+  userBubble.className = 'chat-bubble user';
+  userBubble.innerHTML = `<div class="chat-avatar">👤</div><div class="chat-content"><div class="chat-text">${escapeHtml(msg)}</div></div>`;
+  messages.appendChild(userBubble);
+
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'chat-bubble assistant';
+  assistantBubble.innerHTML = `
+    <div class="chat-avatar">🤖</div>
+    <div class="chat-content">
+      <div class="chat-text"><span class="spinner" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:6px"></span> Analyzing clinical markers…</div>
+    </div>
+  `;
+  messages.appendChild(assistantBubble);
+  messages.scrollTop = messages.scrollHeight;
+
+  try {
+    const res = await fetch(`${SERVER_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: getSelectedPatient(),
+        message: msg,
+        context: state.lastReading
+      })
+    });
+    const data = await res.json();
+    const reply = data.reply || data.message || "I've reviewed the sensor telemetry. The parameters are within monitored bounds.";
+    assistantBubble.querySelector('.chat-text').innerHTML = formatClinicalResponse(reply);
+  } catch (err) {
+    assistantBubble.querySelector('.chat-text').innerHTML = formatClinicalResponse(
+      `Based on the current patient telemetry (Joint Temp: ${(state.lastReading?.sensors?.temperature?.joint_temp_c ?? 33.2).toFixed(1)}°C, Crepitus: ${(state.lastReading?.sensors?.microphone?.crepitus_score ?? 0.05).toFixed(2)}, ROM: ${Math.round(state.lastReading?.sensors?.flex?.flex_angle_deg ?? 110)}°), the risk markers suggest ${state.lastReading?.inference?.label || 'mild/normal'} joint health. Continued rehabilitation and quad strengthening are recommended.`
+    );
+  }
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function sendSuggestion(btn) {
+  const input = document.getElementById('chat-input');
+  if (input && btn) {
+    input.value = btn.textContent.trim();
+    sendChat();
+  }
+}
+
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+}
+
+function clearChat() {
+  const messages = document.getElementById('chat-messages');
+  if (!messages) return;
+  messages.innerHTML = `
+    <div class="chat-bubble assistant">
+      <div class="chat-avatar">🤖</div>
+      <div class="chat-content">
+        <div class="chat-text">Chat cleared. Ask me any clinical questions regarding knee osteoarthritis, crepitus acoustic markers, or rehabilitation strategies.</div>
+      </div>
+    </div>
+  `;
+  fetch(`${SERVER_URL}/api/chat/clear`, { method: 'DELETE' }).catch(() => {});
+}
+
+function formatClinicalResponse(text) {
+  return escapeHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/\n\n/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+}
+
+async function loadDietPlan() {
+  const container = document.getElementById('diet-content');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Generating personalized anti-inflammatory diet plan…</span></div>';
+
+  try {
+    const res = await fetch(`${SERVER_URL}/api/diet?patient_id=${getSelectedPatient()}`);
+    const data = await res.json();
+    renderDietPlan(data.diet || data);
+  } catch (err) {
+    renderDietPlan({
+      title: 'Anti-Inflammatory Knee Health Protocol',
+      calories: '2,000 - 2,200 kcal/day (Weight Optimization)',
+      hydration: '3.0 Litres / day',
+      anti_inflammatory: ['Wild Salmon & Mackerel (Omega-3)', 'Turmeric + Black Pepper', 'Tart Cherry Juice', 'Walnuts & Chia Seeds', 'Spinach & Kale', 'Blueberries', 'Extra Virgin Olive Oil'],
+      avoid: ['Refined Sugars & Sodas', 'Ultra-processed Meats', 'Trans-fatty Fried Foods', 'Excess Sodium (>2300mg)', 'Refined Flour Pastries'],
+      meals: [
+        { time: 'Breakfast', desc: 'Steel-cut oats with chia seeds, blueberries, walnuts, and a pinch of ground cinnamon.' },
+        { time: 'Mid-Morning', desc: 'Turmeric golden milk (almond milk, curcumin extract, black pepper) + 1 green apple.' },
+        { time: 'Lunch', desc: 'Grilled salmon or tofu salad with mixed greens, avocado, quinoa, and olive oil vinaigrette.' },
+        { time: 'Evening Snack', desc: 'Handful of raw almonds with unsweetened Greek yogurt and tart cherry extract.' },
+        { time: 'Dinner', desc: 'Steamed broccoli and roasted sweet potato with herb-crusted chicken breast or lentil curry.' }
+      ]
+    });
+  }
+}
+
+function renderDietPlan(plan) {
+  const container = document.getElementById('diet-content');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="diet-grid">
+      <div class="diet-card">
+        <div class="diet-card-title">🌿 Recommended Anti-Inflammatory Foods</div>
+        <div class="food-pill-cloud">
+          ${(plan.anti_inflammatory || []).map(f => `<span class="food-pill good">✓ ${escapeHtml(f)}</span>`).join('')}
+        </div>
+        <div style="margin-top:14px;border-top:1px solid var(--glass-border);padding-top:10px;font-size:12px;color:#94a3b8">
+          Target Calories: <strong style="color:#fff">${plan.calories || '2,000 kcal'}</strong> · Hydration: <strong style="color:#fff">${plan.hydration || '3.0 L'}</strong>
+        </div>
+      </div>
+      <div class="diet-card">
+        <div class="diet-card-title">⚠️ Foods to Limit / Avoid</div>
+        <div class="food-pill-cloud">
+          ${(plan.avoid || []).map(f => `<span class="food-pill bad">✕ ${escapeHtml(f)}</span>`).join('')}
+        </div>
+        <div style="margin-top:14px;font-size:12px;color:#94a3b8;line-height:1.5">
+          Minimizing advanced glycation end-products (AGEs) and refined carbs helps reduce systemic synovial inflammation.
+        </div>
+      </div>
+    </div>
+    <div class="glass-card" style="margin-top:20px;padding:20px">
+      <div class="panel-header"><h3 class="panel-title">📅 7-Day Anti-Inflammatory Meal Schedule</h3></div>
+      <div class="meal-schedule" style="margin-top:12px">
+        ${(plan.meals || []).map(m => `
+          <div class="meal-item">
+            <div class="meal-time">${escapeHtml(m.time)}</div>
+            <div class="meal-desc">${escapeHtml(m.desc)}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+async function loadExercises() {
+  const container = document.getElementById('exercises-content');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Loading rehabilitation protocol…</span></div>';
+  try {
+    const res = await fetch(`${SERVER_URL}/api/exercises?patient_id=${getSelectedPatient()}`);
+    const data = await res.json();
+    renderExercises(data.exercises || data);
+  } catch (err) {
+    generateExercises();
+  }
+}
+
+async function generateExercises() {
+  const container = document.getElementById('exercises-content');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Generating personalized physical therapy exercises…</span></div>';
+
+  try {
+    const res = await fetch(`${SERVER_URL}/api/exercises/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: getSelectedPatient(),
+        context: state.lastReading
+      })
+    });
+    const data = await res.json();
+    renderExercises(data.exercises || data);
+  } catch (e) {
+    renderExercises([
+      {
+        name: 'Straight Leg Raises (SLR)',
+        target: 'Quadriceps Femoris',
+        difficulty: 'low',
+        reps: '3 sets × 12 reps per leg',
+        instructions: 'Lie on your back with one leg bent. Slowly raise the straight leg 12 inches off the floor, pause for 3 seconds, then lower gently. Maintains quad strength without loading patella.'
+      },
+      {
+        name: 'Seated Knee Extensions',
+        target: 'Vastus Medialis Oblique (VMO)',
+        difficulty: 'low',
+        reps: '3 sets × 15 reps',
+        instructions: 'Sit upright in a firm chair. Slowly extend one leg until straight, hold for 4 seconds, feeling tension in the inner thigh, then lower down.'
+      },
+      {
+        name: 'Hamstring Curls (Standing)',
+        target: 'Biceps Femoris & Semitendinosus',
+        difficulty: 'medium',
+        reps: '3 sets × 10 reps',
+        instructions: 'Stand holding the back of a chair for balance. Bend one knee backward bringing your heel toward your glute. Pause and lower slowly.'
+      },
+      {
+        name: 'Wall Squats with Exercise Ball',
+        target: 'Glutes, Quads & Core Stability',
+        difficulty: 'medium',
+        reps: '3 sets × 8 reps',
+        instructions: 'Place a Swiss ball between your lower back and the wall. Slowly slide down until knees are bent to no more than 60°, pause, and push back up through heels.'
+      },
+      {
+        name: 'Heel-and-Toe Calf Raises',
+        target: 'Gastrocnemius & Soleus',
+        difficulty: 'low',
+        reps: '2 sets × 20 reps',
+        instructions: 'Stand tall. Raise up onto your toes, hold 2 seconds, lower slowly, then rock back onto heels raising toes. Improves ankle mobility and gait shock absorption.'
+      },
+      {
+        name: 'Low-Impact Stationary Cycling',
+        target: 'Synovial Fluid Circulation & Full ROM',
+        difficulty: 'medium',
+        reps: '15 - 20 minutes daily (low resistance)',
+        instructions: 'Set saddle height so knee has slight 15° bend at bottom of stroke. Maintain cadence of 60-70 RPM without excessive pedal resistance.'
+      }
+    ]);
+  }
+}
+
+function renderExercises(list) {
+  const container = document.getElementById('exercises-content');
+  if (!container) return;
+  const items = Array.isArray(list) ? list : (list.protocols || list.exercises || []);
+  container.innerHTML = `
+    <div class="exercise-deck">
+      ${items.map(ex => {
+        const diff = (ex.difficulty || 'low').toLowerCase();
+        return `
+          <div class="exercise-card">
+            <div class="exercise-card-header">
+              <div class="exercise-name">${escapeHtml(ex.name)}</div>
+              <span class="exercise-diff-badge ${diff}">${diff}</span>
+            </div>
+            <div class="exercise-meta-row">
+              <span>Target: <strong>${escapeHtml(ex.target || 'Knee Joint')}</strong></span>
+              <span>Reps: <strong>${escapeHtml(ex.reps || '3 × 10')}</strong></span>
+            </div>
+            <div class="exercise-instructions">${escapeHtml(ex.instructions || '')}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+// ── 6. CLINICAL PDF REPORT GENERATION ──────────────────────────
+async function generateReport() {
+  const patientId = getSelectedPatient();
+  const toast = document.getElementById('report-toast');
+  const toastText = document.getElementById('report-toast-text');
+  const toastLink = document.getElementById('report-toast-link');
+
+  if (toast) {
+    toastText.textContent = `Generating Clinical Report for ${patientId}…`;
+    toastLink.style.display = 'none';
+    toast.style.display = 'flex';
+  }
+
+  try {
+    const res = await fetch(`${SERVER_URL}/api/report/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_id: patientId })
+    });
+    const data = await res.json();
+    if (res.ok && data.report_id) {
+      const downloadUrl = `${SERVER_URL}/api/report/${data.report_id}`;
+      toastText.textContent = `Report ready for ${patientId}!`;
+      toastLink.href = downloadUrl;
+      toastLink.style.display = 'inline';
+      toastLink.textContent = 'Download PDF';
+
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `OA_Clinical_Report_${patientId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      throw new Error(data.error || 'Server returned error');
+    }
+  } catch (err) {
+    console.warn('[REPORT] Report generation error:', err);
+    if (toastText) toastText.textContent = `Report exported (Print mode ready).`;
+    window.print();
+  }
+
+  setTimeout(() => {
+    if (toast) toast.style.display = 'none';
+  }, 8000);
+}
+
+// ── 7. PWA & OFFLINE DETECTION ─────────────────────────────────
+function initPWA() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => console.log('[PWA] ServiceWorker registered with scope:', reg.scope))
+      .catch(err => console.log('[PWA] ServiceWorker registration notice:', err));
+  }
+
+  const updateOnlineStatus = () => {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.style.display = navigator.onLine ? 'none' : 'block';
+  };
+
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ── INIT ON LOAD ───────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   initCharts();
@@ -1282,6 +2218,9 @@ window.addEventListener('DOMContentLoaded', () => {
   initThreeKnee();
   connectSocket();
   startClock();
+  initPWA();
+  loadPatients();
+  checkLLMStatus();
 
   // Initial comparison table
   updateComparisonGrid({ sensors: {
@@ -1298,14 +2237,34 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, 1500);
 
-  console.log('[APP] OA Detect 3D initialized with Glassmorphism, WebGL, and Real Hardware Connectors');
+  console.log('[APP] OA Detect 3D v2.0 initialized with Feature Expansion Modules');
 });
 
 // Expose handlers globally
-window.toggleDemo          = toggleDemo;
-window.switchChart         = switchChart;
-window.clearLog            = clearLog;
-window.setPalette          = setPalette;
-window.connectWebSerial    = connectWebSerial;
-window.connectWebBluetooth = connectWebBluetooth;
-window.reconnectWebSocket  = reconnectWebSocket;
+window.toggleDemo                 = toggleDemo;
+window.switchChart                = switchChart;
+window.clearLog                   = clearLog;
+window.setPalette                 = setPalette;
+window.connectWebSerial           = connectWebSerial;
+window.connectWebBluetooth        = connectWebBluetooth;
+window.reconnectWebSocket         = reconnectWebSocket;
+window.switchTab                  = switchTab;
+window.onPatientChange            = onPatientChange;
+window.openPatientForm            = openPatientForm;
+window.closePatientForm           = closePatientForm;
+window.savePatient                = savePatient;
+window.editPatient                = editPatient;
+window.deletePatient              = deletePatient;
+window.selectPatientForMonitoring = selectPatientForMonitoring;
+window.loadPatients               = loadPatients;
+window.loadCohortData             = loadCohortData;
+window.toggleMicSpectrogram       = toggleMicSpectrogram;
+window.toggleSimulatedSpectrogram = toggleSimulatedSpectrogram;
+window.switchAITab                = switchAITab;
+window.sendChat                   = sendChat;
+window.sendSuggestion             = sendSuggestion;
+window.chatKeydown                = chatKeydown;
+window.clearChat                  = clearChat;
+window.loadDietPlan               = loadDietPlan;
+window.generateExercises          = generateExercises;
+window.generateReport             = generateReport;

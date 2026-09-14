@@ -23,3 +23,6 @@ Thumbs.db
 
 # Database (regenerated automatically by database.py on startup)
 backend/oa_sessions.db
+
+# Generated PDF reports
+backend/reports/*.pdf

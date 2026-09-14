@@ -6,6 +6,11 @@
   <title>OA Detect 3D — AI-Assisted Early Osteoarthritis Detection | SIH 2026</title>
   <meta name="description" content="AI-Assisted Early Detection System for Osteoarthritis Risk Markers — SIH 2026, PS-26004, MDoNER. Real-time 3D sensor monitoring via ESP32-S3." />
 
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#030712" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,8 +31,6 @@
   <!-- ── HAIKEI GENERATIVE FLUID BACKDROP ──────────────────────────────── -->
   <div class="haikei-backdrop">
     <div class="haikei-blobs"></div>
-    
-    <!-- Layer 1: Smooth fluid wave SVG inspired by Haikei -->
     <svg class="haikei-svg haikei-wave-1" viewBox="0 0 900 600" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M0 320C120 280 240 380 360 360C480 340 600 200 720 220C840 240 900 300 960 320V600H0V320Z" fill="url(#haikei-grad-1)"/>
       <defs>
@@ -37,8 +40,6 @@
         </linearGradient>
       </defs>
     </svg>
-
-    <!-- Layer 2: Organic contour wave SVG -->
     <svg class="haikei-svg haikei-wave-2" viewBox="0 0 900 600" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M0 260C140 180 280 340 420 300C560 260 700 120 840 180C920 220 960 260 1000 280V600H0V260Z" fill="url(#haikei-grad-2)"/>
       <defs>
@@ -48,7 +49,6 @@
         </linearGradient>
       </defs>
     </svg>
-
     <div class="topographic-mesh"></div>
   </div>
 
@@ -95,7 +95,7 @@
     </div>
 
     <div class="header-right">
-      <select class="patient-select" id="patient-select" style="border-radius: 20px;">
+      <select class="patient-select" id="patient-select" style="border-radius: 20px;" onchange="onPatientChange(this.value)">
         <option value="PATIENT_001">Patient 001</option>
         <option value="PATIENT_002">Patient 002</option>
         <option value="ALL">All Cohort</option>
@@ -103,50 +103,48 @@
       <button class="btn btn-demo" id="demo-btn" onclick="toggleDemo()">
         <span class="btn-icon">▶</span> Live Simulation
       </button>
+      <button class="btn btn-report" id="report-btn" onclick="generateReport()" title="Export PDF Clinical Report">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+        Export PDF
+      </button>
     </div>
   </header>
 
-  <!-- ── REAL HARDWARE CONNECTOR ACTION BAR ────────────────────────────── -->
+  <!-- ── HARDWARE BAR ────────────────────────────────────────────────── -->
   <div class="hardware-bar">
     <div class="hardware-title">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
+        <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
+        <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
+        <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
+        <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
       </svg>
       Hardware Bridge
     </div>
-
     <div class="connector-buttons">
-      <!-- Web Serial Button -->
       <button class="btn-hardware" id="btn-web-serial" onclick="connectWebSerial()" title="Direct USB connection to ESP32-S3 COM Port">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <span>Connect USB Serial</span>
       </button>
-
-      <!-- Web Bluetooth Button -->
       <button class="btn-hardware" id="btn-web-ble" onclick="connectWebBluetooth()" title="Direct Bluetooth Low Energy connection">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="m7 7 10 10-5 5V2l5 5L7 17"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
         <span>Connect BLE</span>
       </button>
-
-      <!-- Server WebSocket Button -->
       <button class="btn-hardware active" id="btn-web-socket" onclick="reconnectWebSocket()" title="Wi-Fi / Local Server WebSocket bridge">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
         <span>Server WebSocket (Live)</span>
       </button>
     </div>
-
     <div class="hardware-flow-pills">
-      <span class="pin-chip active" id="chip-mic" title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">INMP441: GPIO 1,2,3</span>
+      <span class="pin-chip active" id="chip-mic"  title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">INMP441: GPIO 1,2,3</span>
       <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">MLX90614: GPIO 8,9</span>
-      <span class="pin-chip active" id="chip-imu" title="I2C: SDA=GPIO8, SCL=GPIO9">MPU6050: GPIO 8,9</span>
+      <span class="pin-chip active" id="chip-imu"  title="I2C: SDA=GPIO8, SCL=GPIO9">MPU6050: GPIO 8,9</span>
       <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">Flex: GPIO 4</span>
-      <span class="pin-chip active" id="chip-led" title="NeoPixel Status LED">LED: GPIO 48</span>
+      <span class="pin-chip active" id="chip-led"  title="NeoPixel Status LED">LED: GPIO 48</span>
     </div>
   </div>
 
@@ -157,13 +155,42 @@
     <button onclick="document.getElementById('alert-banner').style.display='none'">✕</button>
   </div>
 
-  <!-- ── MAIN CONTENT ──────────────────────────────────────────────────── -->
-  <main class="main">
+  <!-- ── OFFLINE BANNER ───────────────────────────────────────────────── -->
+  <div class="offline-banner" id="offline-banner" style="display:none">
+    <span>📡 Offline Mode — Showing cached data. Live updates paused.</span>
+  </div>
+
+  <!-- ── MAIN TAB NAVIGATION ──────────────────────────────────────────── -->
+  <nav class="tab-nav" id="tab-nav">
+    <button class="tab-nav-btn active" id="tab-btn-monitor"      onclick="switchTab('monitor')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Live Monitor
+    </button>
+    <button class="tab-nav-btn" id="tab-btn-patients"   onclick="switchTab('patients')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Patients
+    </button>
+    <button class="tab-nav-btn" id="tab-btn-cohort"     onclick="switchTab('cohort')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Cohort
+    </button>
+    <button class="tab-nav-btn" id="tab-btn-spectrogram" onclick="switchTab('spectrogram')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2M6 8v8M10 5v14M14 9v6M18 6v12M22 10v4"/></svg>
+      Spectrogram
+    </button>
+    <button class="tab-nav-btn" id="tab-btn-ai"         onclick="switchTab('ai')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M2 8h20v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8Z"/><path d="M8 8v12"/><path d="M16 8v12"/><path d="M2 12h20"/></svg>
+      AI Insights
+    </button>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       TAB 1: LIVE MONITOR (Original Dashboard)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <main class="main tab-content active" id="tab-monitor">
 
     <!-- ── KPI CARDS ──────────────────────────────────────────────────── -->
     <section class="kpi-row">
-
-      <!-- Risk Gauge Card -->
       <div class="glass-card risk-card" id="risk-card">
         <div class="kpi-label">OA Prediction Risk</div>
         <div class="gauge-wrap">
@@ -173,8 +200,6 @@
         </div>
         <div class="kpi-badge" id="risk-badge">—</div>
       </div>
-
-      <!-- Joint Temperature -->
       <div class="glass-card kpi-card">
         <div>
           <div class="kpi-icon temp-icon">🌡️</div>
@@ -184,8 +209,6 @@
         </div>
         <div class="kpi-bar-wrap"><div class="kpi-bar temp-bar" id="kb-temp"></div></div>
       </div>
-
-      <!-- Crepitus Score -->
       <div class="glass-card kpi-card">
         <div>
           <div class="kpi-icon">🔊</div>
@@ -195,19 +218,15 @@
         </div>
         <div class="kpi-bar-wrap"><div class="kpi-bar crep-bar" id="kb-crep"></div></div>
       </div>
-
-      <!-- Flex / ROM -->
       <div class="glass-card kpi-card">
         <div>
           <div class="kpi-icon">🦵</div>
-          <div class="kpi-label">Flexion Angle & ROM</div>
+          <div class="kpi-label">Flexion Angle &amp; ROM</div>
           <div class="kpi-value" id="kv-rom">--°</div>
           <div class="kpi-delta" id="kd-rom">Normal: 90–130°</div>
         </div>
         <div class="kpi-bar-wrap"><div class="kpi-bar rom-bar" id="kb-rom"></div></div>
       </div>
-
-      <!-- Step Symmetry -->
       <div class="glass-card kpi-card">
         <div>
           <div class="kpi-icon">🚶</div>
@@ -217,8 +236,6 @@
         </div>
         <div class="kpi-bar-wrap"><div class="kpi-bar gait-bar" id="kb-gait"></div></div>
       </div>
-
-      <!-- Session Stats -->
       <div class="glass-card kpi-card">
         <div>
           <div class="kpi-icon">📊</div>
@@ -228,64 +245,41 @@
         </div>
         <div class="kpi-bar-wrap"><div class="kpi-bar count-bar" id="kb-count"></div></div>
       </div>
-
     </section>
 
-    <!-- ── 3D KNEE JOINT & BIOMECHANICAL VISUALIZER ────────────────────── -->
+    <!-- ── 3D KNEE JOINT & BIOMECHANICAL VISUALIZER ─────────────────── -->
     <section class="viewport-row">
-
-      <!-- Interactive 3D Knee Model -->
       <div class="glass-card" style="padding: 16px;">
         <div class="panel-header" style="margin-bottom: 12px;">
           <h2 class="panel-title">
             <span class="panel-dot live-dot"></span>
-            3D Biomechanical Knee & Wearable Sensor Rig
+            3D Biomechanical Knee &amp; Wearable Sensor Rig
           </h2>
-          <span class="panel-subtitle">Interactive WebGL · Flexion & Thermal Heatmap</span>
+          <span class="panel-subtitle">Interactive WebGL · Flexion &amp; Thermal Heatmap</span>
         </div>
-
         <div class="three-container">
           <canvas id="knee-canvas"></canvas>
-
-          <!-- 3D Viewport HUD Overlay -->
           <div class="three-overlay">
             <div class="three-badge-group">
-              <div class="three-badge">
-                <span>Joint Angle:</span>
-                <strong id="hud-angle">112°</strong>
-              </div>
-              <div class="three-badge">
-                <span>Capsule Heatmap:</span>
-                <strong id="hud-temp" style="color: var(--color-success)">33.2°C (Norm)</strong>
-              </div>
-              <div class="three-badge">
-                <span>Acoustic Wave:</span>
-                <strong id="hud-crep">Inactive</strong>
-              </div>
+              <div class="three-badge"><span>Joint Angle:</span><strong id="hud-angle">112°</strong></div>
+              <div class="three-badge"><span>Capsule Heatmap:</span><strong id="hud-temp" style="color: var(--color-success)">33.2°C (Norm)</strong></div>
+              <div class="three-badge"><span>Acoustic Wave:</span><strong id="hud-crep">Inactive</strong></div>
             </div>
-
             <div class="three-controls">
               <button class="three-btn" id="btn-reset-cam" title="Reset 3D Camera">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
-                </svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
               </button>
               <button class="three-btn" id="btn-wireframe" title="Toggle Wireframe Mesh">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="m21 16-9 5-9-5V8l9-5 9 5v8z"/><path d="M12 3v18"/><path d="m3 8 9 5 9-5"/><path d="m3 16 9-5 9 5"/>
-                </svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21 16-9 5-9-5V8l9-5 9 5v8z"/><path d="M12 3v18"/><path d="m3 8 9 5 9-5"/><path d="m3 16 9-5 9 5"/></svg>
               </button>
               <button class="three-btn" id="btn-autorotate" title="Toggle Orbit Auto-Rotation">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>
-                </svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
               </button>
             </div>
           </div>
-
           <div class="three-legend-hud">
             <span>🖱️ Drag to Rotate · Scroll to Zoom · Right Click to Pan</span>
-            <span>Femur / Patella / Tibia & Smart Exoskeleton</span>
+            <span>Femur / Patella / Tibia &amp; Smart Exoskeleton</span>
           </div>
         </div>
       </div>
@@ -305,13 +299,10 @@
           <span class="legend-dot" style="background:var(--color-accent)"></span> OA Reference
         </div>
       </div>
-
     </section>
 
-    <!-- ── MIDDLE ROW: CHARTS + COMPARISON ───────────────────────────── -->
+    <!-- ── MIDDLE ROW: CHARTS + COMPARISON ─────────────────────────── -->
     <section class="charts-row">
-
-      <!-- Live Sensor Charts Panel -->
       <div class="glass-card charts-panel">
         <div class="panel-header">
           <h2 class="panel-title">
@@ -325,22 +316,11 @@
             <button class="tab-btn" onclick="switchChart('flex')">🦵 Flex</button>
           </div>
         </div>
-
-        <div class="chart-container" id="chart-audio">
-          <canvas id="audioChart"></canvas>
-        </div>
-        <div class="chart-container hidden" id="chart-temp">
-          <canvas id="tempChart"></canvas>
-        </div>
-        <div class="chart-container hidden" id="chart-imu">
-          <canvas id="imuChart"></canvas>
-        </div>
-        <div class="chart-container hidden" id="chart-flex">
-          <canvas id="flexChart"></canvas>
-        </div>
+        <div class="chart-container" id="chart-audio"><canvas id="audioChart"></canvas></div>
+        <div class="chart-container hidden" id="chart-temp"><canvas id="tempChart"></canvas></div>
+        <div class="chart-container hidden" id="chart-imu"><canvas id="imuChart"></canvas></div>
+        <div class="chart-container hidden" id="chart-flex"><canvas id="flexChart"></canvas></div>
       </div>
-
-      <!-- Comparison Panel -->
       <div class="glass-card comparison-panel">
         <div class="panel-header">
           <h2 class="panel-title">📊 Baseline Comparison</h2>
@@ -351,14 +331,26 @@
           <div class="comp-legend-item"><span class="legend-dot" style="background:var(--color-success)"></span> Normal</div>
           <div class="comp-legend-item"><span class="legend-dot" style="background:var(--color-accent)"></span> Early OA</div>
         </div>
-        <div class="comparison-grid" id="comparison-grid">
-          <!-- Populated by JS -->
-        </div>
+        <div class="comparison-grid" id="comparison-grid"></div>
       </div>
-
     </section>
 
-    <!-- ── SENSOR HARDWARE TILES ──────────────────────────────────────── -->
+    <!-- ── TREND CHART (inside monitor tab) ──────────────────────────── -->
+    <section class="glass-card trend-panel">
+      <div class="panel-header">
+        <h2 class="panel-title">📈 Risk Progression Trend</h2>
+        <div class="trend-controls">
+          <button class="tab-btn" onclick="loadTrend(7)" id="trend-7">7d</button>
+          <button class="tab-btn active" onclick="loadTrend(30)" id="trend-30">30d</button>
+          <span class="trend-badge" id="trend-direction-badge">—</span>
+        </div>
+      </div>
+      <div class="chart-container" style="height: 180px;">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </section>
+
+    <!-- ── SENSOR HARDWARE TILES ─────────────────────────────────────── -->
     <section class="sensor-cards-row">
       <div class="glass-card sensor-card mic-card">
         <div class="sensor-icon">🎙️</div>
@@ -371,7 +363,6 @@
         </div>
         <div class="sensor-status" id="ss-mic">●&nbsp;Connected</div>
       </div>
-
       <div class="glass-card sensor-card temp-sensor-card">
         <div class="sensor-icon">🌡️</div>
         <div class="sensor-name">MLX90614 IR Temp</div>
@@ -383,7 +374,6 @@
         </div>
         <div class="sensor-status" id="ss-temp">●&nbsp;Connected</div>
       </div>
-
       <div class="glass-card sensor-card imu-card">
         <div class="sensor-icon">📐</div>
         <div class="sensor-name">MPU6050 IMU</div>
@@ -395,7 +385,6 @@
         </div>
         <div class="sensor-status" id="ss-imu">●&nbsp;Connected</div>
       </div>
-
       <div class="glass-card sensor-card flex-card">
         <div class="sensor-icon">🦵</div>
         <div class="sensor-name">Flex Sensor</div>
@@ -407,7 +396,6 @@
         </div>
         <div class="sensor-status" id="ss-flex">●&nbsp;Connected</div>
       </div>
-
       <div class="glass-card sensor-card esp-card">
         <div class="sensor-icon">🔌</div>
         <div class="sensor-name">ESP32-S3 N16R8</div>
@@ -424,20 +412,15 @@
     <!-- ── CLINICAL LOG TABLE ─────────────────────────────────────────── -->
     <section class="glass-card log-panel">
       <div class="panel-header">
-        <h2 class="panel-title">📋 Clinical Telemetry & Inference Log</h2>
+        <h2 class="panel-title">📋 Clinical Telemetry &amp; Inference Log</h2>
         <button class="btn-clear" onclick="clearLog()">Clear History</button>
       </div>
       <div class="log-table-wrap">
         <table class="log-table">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Patient</th>
-              <th>Classification</th>
-              <th>Risk Score</th>
-              <th>Joint Temp</th>
-              <th>Flex ROM</th>
-              <th>Crepitus</th>
+              <th>Time</th><th>Patient</th><th>Classification</th>
+              <th>Risk Score</th><th>Joint Temp</th><th>Flex ROM</th><th>Crepitus</th>
             </tr>
           </thead>
           <tbody id="log-tbody">
@@ -449,6 +432,300 @@
 
   </main>
 
+  <!-- ═══════════════════════════════════════════════════════════════════
+       TAB 2: PATIENT PROFILE MANAGER
+       ═══════════════════════════════════════════════════════════════════ -->
+  <main class="main tab-content" id="tab-patients">
+    <div class="tab-hero">
+      <h1 class="tab-hero-title">👤 Patient Profile Manager</h1>
+      <p class="tab-hero-sub">Add, edit, and track patient demographic and clinical profiles</p>
+      <button class="btn btn-demo" id="add-patient-btn" onclick="openPatientForm(null)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add New Patient
+      </button>
+    </div>
+
+    <!-- Patient Form Modal (hidden by default) -->
+    <div class="modal-overlay" id="patient-modal" style="display:none">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="patient-form-title">Add New Patient</h3>
+          <button class="modal-close" onclick="closePatientForm()">✕</button>
+        </div>
+        <form class="patient-form" id="patient-form" onsubmit="savePatient(event)">
+          <input type="hidden" id="pf-id" name="patient_id" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>Full Name *</label>
+              <input type="text" id="pf-name" name="name" required placeholder="e.g. Anita Sharma" />
+            </div>
+            <div class="form-group">
+              <label>Patient ID</label>
+              <input type="text" id="pf-pid" placeholder="Auto-generated if empty" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Age</label>
+              <input type="number" id="pf-age" name="age" min="10" max="100" placeholder="e.g. 58" />
+            </div>
+            <div class="form-group">
+              <label>Gender</label>
+              <select id="pf-gender" name="gender">
+                <option value="">Select</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>BMI (kg/m²)</label>
+              <input type="number" id="pf-bmi" name="bmi" step="0.1" min="10" max="60" placeholder="e.g. 26.4" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>KL OA Grade</label>
+              <select id="pf-grade" name="oa_grade">
+                <option value="Unknown">Unknown</option>
+                <option value="0">Grade 0 (Normal)</option>
+                <option value="1">Grade 1 (Doubtful)</option>
+                <option value="2">Grade 2 (Mild)</option>
+                <option value="3">Grade 3 (Moderate)</option>
+                <option value="4">Grade 4 (Severe)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Comorbidities</label>
+              <input type="text" id="pf-comorbid" name="comorbidities" placeholder="e.g. diabetes, obesity" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Clinical Notes</label>
+            <textarea id="pf-notes" name="notes" rows="3" placeholder="Symptoms, complaints, relevant history..."></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" onclick="closePatientForm()">Cancel</button>
+            <button type="submit" class="btn btn-demo">Save Patient</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Patient Grid -->
+    <div class="patient-grid" id="patient-grid">
+      <div class="loading-placeholder">
+        <div class="spinner"></div>
+        <span>Loading patients...</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       TAB 3: MULTI-PATIENT COHORT DASHBOARD
+       ═══════════════════════════════════════════════════════════════════ -->
+  <main class="main tab-content" id="tab-cohort">
+    <div class="tab-hero">
+      <h1 class="tab-hero-title">🌐 Multi-Patient Cohort</h1>
+      <p class="tab-hero-sub">Population-level OA risk analytics and patient comparison</p>
+    </div>
+
+    <!-- Cohort KPI Row -->
+    <section class="kpi-row" id="cohort-kpi-row">
+      <div class="glass-card kpi-card"><div><div class="kpi-icon">👥</div><div class="kpi-label">Total Patients</div><div class="kpi-value" id="cohort-pt-count">—</div></div></div>
+      <div class="glass-card kpi-card"><div><div class="kpi-icon">⚠️</div><div class="kpi-label">High Risk Patients</div><div class="kpi-value" id="cohort-highrisk">—</div></div></div>
+      <div class="glass-card kpi-card"><div><div class="kpi-icon">📊</div><div class="kpi-label">Total Sessions</div><div class="kpi-value" id="cohort-sessions">—</div></div></div>
+      <div class="glass-card kpi-card"><div><div class="kpi-icon">🦴</div><div class="kpi-label">OA Readings</div><div class="kpi-value" id="cohort-oa">—</div></div></div>
+    </section>
+
+    <section class="charts-row">
+      <!-- Population Chart -->
+      <div class="glass-card" style="padding: 20px;">
+        <div class="panel-header"><h2 class="panel-title">📊 Population Risk Distribution</h2></div>
+        <div class="chart-container" style="height: 220px;"><canvas id="cohortChart"></canvas></div>
+      </div>
+      <!-- Top 3 High Risk -->
+      <div class="glass-card" style="padding: 20px;">
+        <div class="panel-header"><h2 class="panel-title">🚨 High Risk Patients</h2></div>
+        <div id="high-risk-list" class="high-risk-list"></div>
+      </div>
+    </section>
+
+    <!-- Cohort Patient Grid -->
+    <div class="cohort-grid" id="cohort-grid"></div>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       TAB 4: ACOUSTIC SPECTROGRAM VIEWER
+       ═══════════════════════════════════════════════════════════════════ -->
+  <main class="main tab-content" id="tab-spectrogram">
+    <div class="tab-hero">
+      <h1 class="tab-hero-title">🔊 Acoustic Spectrogram Viewer</h1>
+      <p class="tab-hero-sub">Real-time FFT waterfall of joint sounds for crepitus frequency analysis</p>
+    </div>
+
+    <section class="spectrogram-layout">
+      <!-- Waterfall Canvas -->
+      <div class="glass-card spectrogram-card">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <span class="panel-dot live-dot" id="spec-live-dot"></span>
+            Crepitus Waterfall
+          </h2>
+          <div class="spec-controls">
+            <button class="btn btn-demo" id="spec-mic-btn" onclick="toggleMicSpectrogram()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              Live Mic
+            </button>
+            <button class="btn btn-secondary" onclick="toggleSimulatedSpectrogram()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Simulate
+            </button>
+          </div>
+        </div>
+        <div class="spectrogram-container">
+          <canvas id="spectrogram-canvas"></canvas>
+          <div class="spectrogram-y-labels">
+            <span>8kHz</span><span>4kHz</span><span>2kHz</span>
+            <span class="crep-label">800Hz</span>
+            <span class="crep-label">300Hz</span>
+            <span>100Hz</span><span>0Hz</span>
+          </div>
+          <!-- Crepitus band markers -->
+          <div class="crep-band-marker" id="crep-band-high" style="bottom: 55%;"></div>
+          <div class="crep-band-marker" id="crep-band-low"  style="bottom: 20%;"></div>
+        </div>
+        <div class="spectrogram-legend">
+          <span class="spec-legend-item"><span class="spec-dot" style="background:#000"></span> Silent</span>
+          <span class="spec-legend-item"><span class="spec-dot" style="background:#1e3a5f"></span> Low</span>
+          <span class="spec-legend-item"><span class="spec-dot" style="background:#0c7ae0"></span> Medium</span>
+          <span class="spec-legend-item"><span class="spec-dot" style="background:#22d3ee"></span> High</span>
+          <span class="spec-legend-item"><span class="spec-dot" style="background:#f59e0b"></span> Crepitus</span>
+          <span class="spec-legend-item"><span class="spec-dot" style="background:#f43f5e"></span> Peak</span>
+          <span style="margin-left:auto;opacity:0.6;font-size:11px">← Time scroll (older) · Frequency →</span>
+        </div>
+      </div>
+
+      <!-- Spectrogram HUD -->
+      <div class="glass-card spectrogram-hud">
+        <div class="panel-header"><h2 class="panel-title">📊 Frequency Analysis</h2></div>
+
+        <div class="spec-hud-grid">
+          <div class="spec-hud-item">
+            <div class="spec-hud-label">Dominant Freq</div>
+            <div class="spec-hud-val" id="spec-dom-freq">-- Hz</div>
+          </div>
+          <div class="spec-hud-item">
+            <div class="spec-hud-label">Crepitus Band Energy</div>
+            <div class="spec-hud-val" id="spec-crep-energy">--%</div>
+          </div>
+          <div class="spec-hud-item">
+            <div class="spec-hud-label">Peak Amplitude</div>
+            <div class="spec-hud-val" id="spec-peak">-- dB</div>
+          </div>
+          <div class="spec-hud-item">
+            <div class="spec-hud-label">Crepitus Events</div>
+            <div class="spec-hud-val" id="spec-events">0</div>
+          </div>
+        </div>
+
+        <!-- Live FFT bar chart -->
+        <div class="panel-header" style="margin-top:16px"><h3 class="panel-title" style="font-size:12px">Live FFT Spectrum</h3></div>
+        <div style="height: 120px;"><canvas id="fftBarChart"></canvas></div>
+
+        <!-- Crepitus event log -->
+        <div class="panel-header" style="margin-top:16px"><h3 class="panel-title" style="font-size:12px">Detected Events</h3></div>
+        <div class="crep-event-log" id="crep-event-log">
+          <div style="opacity:0.4;font-size:11px;text-align:center;padding-top:16px">No events detected yet</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       TAB 5: AI INSIGHTS + DIET + EXERCISES
+       ═══════════════════════════════════════════════════════════════════ -->
+  <main class="main tab-content" id="tab-ai">
+    <div class="tab-hero">
+      <h1 class="tab-hero-title">🤖 AI Clinical Insights</h1>
+      <p class="tab-hero-sub">Gemini-powered clinical Q&amp;A, diet recommendations, and rehabilitation protocols</p>
+    </div>
+
+    <!-- AI Sub-tabs -->
+    <nav class="ai-subtabs">
+      <button class="ai-subtab active" id="ai-tab-chat"      onclick="switchAITab('chat')">💬 Clinical Chat</button>
+      <button class="ai-subtab"        id="ai-tab-diet"      onclick="switchAITab('diet')">🥗 Diet Plan</button>
+      <button class="ai-subtab"        id="ai-tab-exercises" onclick="switchAITab('exercises')">🏃 Rehab Exercises</button>
+    </nav>
+
+    <!-- CHAT PANEL -->
+    <div class="ai-panel active" id="ai-panel-chat">
+      <div class="ai-layout">
+        <div class="glass-card chat-card">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <span class="llm-mode-badge" id="llm-mode-badge">...</span>
+              Ask the AI Clinical Assistant
+            </h2>
+            <button class="btn-clear" onclick="clearChat()">Clear Chat</button>
+          </div>
+
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-bubble assistant">
+              <div class="chat-avatar">🤖</div>
+              <div class="chat-content">
+                <div class="chat-text">Hello! I'm your AI clinical assistant for OA analysis. I can help you interpret sensor readings, explain risk scores, and answer questions about osteoarthritis management.<br><br>Ask me anything — e.g. <em>"What does this patient's crepitus score mean?"</em> or <em>"Is 37% risk concerning?"</em></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-row">
+            <div class="chat-suggestions" id="chat-suggestions">
+              <button class="chat-suggest-btn" onclick="sendSuggestion(this)">What does the risk score mean?</button>
+              <button class="chat-suggest-btn" onclick="sendSuggestion(this)">Explain the crepitus reading</button>
+              <button class="chat-suggest-btn" onclick="sendSuggestion(this)">What does the joint temperature indicate?</button>
+              <button class="chat-suggest-btn" onclick="sendSuggestion(this)">How is gait symmetry measured?</button>
+            </div>
+            <div class="chat-input-wrap">
+              <textarea class="chat-input" id="chat-input" placeholder="Ask about patient data, OA symptoms, treatment options..." rows="2" onkeydown="chatKeydown(event)"></textarea>
+              <button class="chat-send-btn" id="chat-send-btn" onclick="sendChat()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIET PANEL -->
+    <div class="ai-panel" id="ai-panel-diet">
+      <div class="panel-header" style="margin-bottom: 16px;">
+        <h2 class="panel-title">🥗 Personalised Diet Plan</h2>
+        <button class="btn btn-demo" onclick="loadDietPlan()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Regenerate Plan
+        </button>
+      </div>
+      <div id="diet-content">
+        <div class="loading-placeholder"><div class="spinner"></div><span>Generating diet plan...</span></div>
+      </div>
+    </div>
+
+    <!-- EXERCISES PANEL -->
+    <div class="ai-panel" id="ai-panel-exercises">
+      <div class="panel-header" style="margin-bottom: 16px;">
+        <h2 class="panel-title">🏃 Rehabilitation Protocol</h2>
+        <button class="btn btn-demo" onclick="generateExercises()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Generate New Plan
+        </button>
+      </div>
+      <div id="exercises-content">
+        <div class="loading-placeholder"><div class="spinner"></div><span>Loading exercise protocol...</span></div>
+      </div>
+    </div>
+  </main>
+
   <!-- ── REALTIME COLORS FLOATING DOCK ─────────────────────────────────── -->
   <div class="palette-dock" id="palette-dock">
     <div class="palette-label">
@@ -458,10 +735,18 @@
       Palette:
     </div>
     <div class="color-swatch swatch-cyberpunk active" onclick="setPalette('cyberpunk')" title="Cyberpunk Clinical (Cyan/Purple)"></div>
-    <div class="color-swatch swatch-emerald" onclick="setPalette('emerald')" title="Bioluminescent Emerald (Green/Teal)"></div>
-    <div class="color-swatch swatch-arctic" onclick="setPalette('arctic')" title="Deep Arctic Frost (Ice/Indigo)"></div>
-    <div class="color-swatch swatch-solar" onclick="setPalette('solar')" title="Thermal Diagnostic (Amber/Rose)"></div>
-    <div class="color-swatch swatch-amethyst" onclick="setPalette('amethyst')" title="Royal Amethyst (Violet/Pink)"></div>
+    <div class="color-swatch swatch-emerald"  onclick="setPalette('emerald')"  title="Bioluminescent Emerald (Green/Teal)"></div>
+    <div class="color-swatch swatch-arctic"   onclick="setPalette('arctic')"   title="Deep Arctic Frost (Ice/Indigo)"></div>
+    <div class="color-swatch swatch-solar"    onclick="setPalette('solar')"    title="Thermal Diagnostic (Amber/Rose)"></div>
+    <div class="color-swatch swatch-amethyst" onclick="setPalette('amethyst')  " title="Royal Amethyst (Violet/Pink)"></div>
+  </div>
+
+  <!-- ── REPORT TOAST ──────────────────────────────────────────────────── -->
+  <div class="report-toast" id="report-toast" style="display:none">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    <span id="report-toast-text">Report generated!</span>
+    <a id="report-toast-link" href="#" target="_blank" style="color:var(--color-primary)">Download PDF</a>
+    <button onclick="document.getElementById('report-toast').style.display='none'">✕</button>
   </div>
 
   <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
