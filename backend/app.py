@@ -91,6 +91,22 @@ def index():
 def static_files(filename):
     return send_from_directory(DASHBOARD_DIR, filename)
 
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    return response
+
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "service": "oa-detection-backend",
+        "version": "2.1.0",
+        "timestamp": datetime.now().isoformat()
+    })
+
 
 # ─── SENSOR DATA ──────────────────────────────────────────────────────────────
 
