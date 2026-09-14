@@ -1274,19 +1274,44 @@ function getSelectedPatient() {
 
 function startClock() {
   const el = document.getElementById('footer-time');
-  if (!el) return;
+  const topEl = document.getElementById('topbar-time');
   setInterval(() => {
-    el.textContent = new Date().toLocaleString('en-IN', {
+    const formatted = new Date().toLocaleString('en-IN', {
       weekday: 'short', year: 'numeric', month: 'short',
       day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
+    if (el) el.textContent = formatted;
+    if (topEl) topEl.textContent = formatted;
   }, 1000);
+}
+
+// ── JOINT SIDE & SIDEBAR CONTROLLERS ───────────────────────────
+let currentJointSide = 'LEFT';
+function setJointSide(side) {
+  currentJointSide = side;
+  const leftBtn = document.getElementById('side-left-btn');
+  const rightBtn = document.getElementById('side-right-btn');
+  if (leftBtn) leftBtn.classList.toggle('active', side === 'LEFT');
+  if (rightBtn) rightBtn.classList.toggle('active', side === 'RIGHT');
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar-panel');
+  if (sidebar) sidebar.classList.toggle('open');
 }
 
 // ── FEATURE EXPANSION MODULES v2.0 ─────────────────────────────
 
 // ── 1. TAB ROUTER ──────────────────────────────────────────────
 let activeTab = 'monitor';
+const TAB_TITLES = {
+  monitor:     'Live Biomechanical & Diagnostic Telemetry',
+  patients:    'Patient Profile & Clinical Registry',
+  cohort:      'Multi-Patient Population Cohort Analytics',
+  spectrogram: 'Acoustic Joint Crepitus & FFT Waterfall',
+  ai:          'AI Clinical Insights & Assistive Recommendations'
+};
+
 function switchTab(tabId) {
   activeTab = tabId;
   document.querySelectorAll('.tab-nav-btn').forEach(btn => {
@@ -1295,6 +1320,20 @@ function switchTab(tabId) {
   document.querySelectorAll('.tab-content').forEach(panel => {
     panel.classList.toggle('active', panel.id === `tab-${tabId}`);
   });
+
+  const pageTitleEl = document.getElementById('topbar-page-title');
+  if (pageTitleEl && TAB_TITLES[tabId]) {
+    pageTitleEl.textContent = TAB_TITLES[tabId];
+  }
+
+  // Close mobile sidebar if open
+  const sidebar = document.getElementById('sidebar-panel');
+  if (sidebar && sidebar.classList.contains('open')) {
+    sidebar.classList.remove('open');
+  }
+
+  // Trigger resize event so charts / WebGL canvas adjust to viewport immediately
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
 
   if (tabId === 'patients') {
     loadPatients();
@@ -2268,3 +2307,5 @@ window.clearChat                  = clearChat;
 window.loadDietPlan               = loadDietPlan;
 window.generateExercises          = generateExercises;
 window.generateReport             = generateReport;
+window.setJointSide               = setJointSide;
+window.toggleSidebar              = toggleSidebar;

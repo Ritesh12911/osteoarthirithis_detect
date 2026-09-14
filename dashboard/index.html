@@ -52,137 +52,206 @@
     <div class="topographic-mesh"></div>
   </div>
 
-  <!-- ── HEADER ───────────────────────────────────────────────────────── -->
-  <header class="header">
-    <div class="header-left">
-      <a href="#" class="logo">
-        <div class="logo-icon">
-          <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
-            <circle cx="14" cy="14" r="12" stroke="url(#g1)" stroke-width="2.2"/>
-            <path d="M7 14 Q10.5 7 14 14 Q17.5 21 21 14" stroke="var(--color-primary)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-            <circle cx="14" cy="14" r="3" fill="var(--color-secondary)"/>
-            <defs>
-              <linearGradient id="g1" x1="0" y1="0" x2="28" y2="28">
-                <stop stop-color="var(--color-primary)"/>
-                <stop offset="1" stop-color="var(--color-secondary)"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-        <div class="logo-text">
-          <span class="logo-title">OA<span class="accent">Detect</span> <span style="font-size: 14px; font-weight: 600; opacity: 0.8">3D</span></span>
-          <span class="logo-sub">SIH 2026 · PS-26004 · MDoNER</span>
-        </div>
-      </a>
-    </div>
+  <!-- ── TWO-COLUMN APP SHELL ───────────────────────────────────────────── -->
+  <div class="app-layout" id="app-layout">
 
-    <div class="header-center">
-      <div class="status-bar">
-        <div class="status-indicator" id="conn-indicator">
-          <span class="dot" id="conn-dot"></span>
-          <span id="conn-text">Connecting...</span>
-        </div>
-        <div class="divider-v"></div>
-        <div class="status-pill" id="device-pill">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-            <rect x="1" y="3" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M4 3V2a2 2 0 014 0v1" stroke="currentColor" stroke-width="1.2" fill="none"/>
-          </svg>
-          ESP32-S3 N16R8
-        </div>
-        <div class="status-pill" id="mode-pill">DEMO STREAM</div>
+    <!-- ── LEFT SIDEBAR PANEL (ALL OPTIONS & BUTTONS) ───────────────────── -->
+    <aside class="sidebar-panel" id="sidebar-panel">
+      <!-- Brand & Identity -->
+      <div class="sidebar-header">
+        <a href="#" class="logo">
+          <div class="logo-icon">
+            <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+              <circle cx="14" cy="14" r="12" stroke="url(#g1)" stroke-width="2.2"/>
+              <path d="M7 14 Q10.5 7 14 14 Q17.5 21 21 14" stroke="var(--color-primary)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+              <circle cx="14" cy="14" r="3" fill="var(--color-secondary)"/>
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="28" y2="28">
+                  <stop stop-color="var(--color-primary)"/>
+                  <stop offset="1" stop-color="var(--color-secondary)"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="logo-title">OA<span class="accent">Detect</span> <span style="font-size: 13px; font-weight: 700; opacity: 0.85">3D</span></span>
+            <span class="logo-sub">SIH 2026 · PS-26004</span>
+          </div>
+        </a>
       </div>
-    </div>
 
-    <div class="header-right">
-      <select class="patient-select" id="patient-select" style="border-radius: 20px;" onchange="onPatientChange(this.value)">
-        <option value="PATIENT_001">Patient 001</option>
-        <option value="PATIENT_002">Patient 002</option>
-        <option value="ALL">All Cohort</option>
-      </select>
-      <button class="btn btn-demo" id="demo-btn" onclick="toggleDemo()">
-        <span class="btn-icon">▶</span> Live Simulation
-      </button>
-      <button class="btn btn-report" id="report-btn" onclick="generateReport()" title="Export PDF Clinical Report">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
-        </svg>
-        Export PDF
-      </button>
-    </div>
-  </header>
+      <div class="sidebar-scrollable">
 
-  <!-- ── HARDWARE BAR ────────────────────────────────────────────────── -->
-  <div class="hardware-bar">
-    <div class="hardware-title">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
-        <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
-        <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
-        <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
-        <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
-      </svg>
-      Hardware Bridge
-    </div>
-    <div class="connector-buttons">
-      <button class="btn-hardware" id="btn-web-serial" onclick="connectWebSerial()" title="Direct USB connection to ESP32-S3 COM Port">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        <span>Connect USB Serial</span>
-      </button>
-      <button class="btn-hardware" id="btn-web-ble" onclick="connectWebBluetooth()" title="Direct Bluetooth Low Energy connection">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
-        <span>Connect BLE</span>
-      </button>
-      <button class="btn-hardware active" id="btn-web-socket" onclick="reconnectWebSocket()" title="Wi-Fi / Local Server WebSocket bridge">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
-        <span>Server WebSocket (Live)</span>
-      </button>
-    </div>
-    <div class="hardware-flow-pills">
-      <span class="pin-chip active" id="chip-mic"  title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">INMP441: GPIO 1,2,3</span>
-      <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">MLX90614: GPIO 8,9</span>
-      <span class="pin-chip active" id="chip-imu"  title="I2C: SDA=GPIO8, SCL=GPIO9">MPU6050: GPIO 8,9</span>
-      <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">Flex: GPIO 4</span>
-      <span class="pin-chip active" id="chip-led"  title="NeoPixel Status LED">LED: GPIO 48</span>
-    </div>
-  </div>
+        <!-- ── SECTION 1: PRIMARY ACTION BUTTONS ── -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Quick Actions
+          </div>
+          <div class="sidebar-actions-group">
+            <button class="btn btn-demo sidebar-action-btn" id="demo-btn" onclick="toggleDemo()">
+              <span class="btn-icon">▶</span> Live Simulation
+            </button>
+            <button class="btn btn-report sidebar-action-btn" id="report-btn" onclick="generateReport()" title="Export PDF Clinical Report">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+              Export PDF Report
+            </button>
+          </div>
+        </div>
 
-  <!-- ── ALERT BANNER ─────────────────────────────────────────────────── -->
-  <div class="alert-banner" id="alert-banner" style="display:none">
-    <span class="alert-icon">⚠️</span>
-    <span id="alert-text">High OA Risk Marker Detected</span>
-    <button onclick="document.getElementById('alert-banner').style.display='none'">✕</button>
-  </div>
+        <!-- ── SECTION 2: PATIENT & EXAMINATION OPTIONS ── -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Patient &amp; Joint Options
+          </div>
+          <div class="sidebar-patient-box">
+            <label class="sidebar-field-label" for="patient-select">Active Subject</label>
+            <div class="select-wrapper">
+              <select class="patient-select sidebar-select" id="patient-select" onchange="onPatientChange(this.value)">
+                <option value="PATIENT_001">Patient 001</option>
+                <option value="PATIENT_002">Patient 002</option>
+                <option value="ALL">All Cohort</option>
+              </select>
+            </div>
+            <div class="joint-side-selector">
+              <span class="sidebar-field-label">Target Joint:</span>
+              <div class="side-btn-group">
+                <button type="button" class="side-btn active" id="side-left-btn" onclick="setJointSide('LEFT')">Left Knee</button>
+                <button type="button" class="side-btn" id="side-right-btn" onclick="setJointSide('RIGHT')">Right Knee</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
-  <!-- ── OFFLINE BANNER ───────────────────────────────────────────────── -->
-  <div class="offline-banner" id="offline-banner" style="display:none">
-    <span>📡 Offline Mode — Showing cached data. Live updates paused.</span>
-  </div>
+        <!-- ── SECTION 3: NAVIGATION MODULES (TABS) ── -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Navigation Modules
+          </div>
+          <nav class="sidebar-nav" id="tab-nav">
+            <button class="tab-nav-btn active" id="tab-btn-monitor" onclick="switchTab('monitor')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <span>Live Monitor</span>
+              <span class="nav-pill-dot live-dot"></span>
+            </button>
+            <button class="tab-nav-btn" id="tab-btn-patients" onclick="switchTab('patients')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>Patients</span>
+            </button>
+            <button class="tab-nav-btn" id="tab-btn-cohort" onclick="switchTab('cohort')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Cohort Analytics</span>
+            </button>
+            <button class="tab-nav-btn" id="tab-btn-spectrogram" onclick="switchTab('spectrogram')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2M6 8v8M10 5v14M14 9v6M18 6v12M22 10v4"/></svg>
+              <span>Spectrogram</span>
+            </button>
+            <button class="tab-nav-btn" id="tab-btn-ai" onclick="switchTab('ai')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M2 8h20v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8Z"/><path d="M8 8v12"/><path d="M16 8v12"/><path d="M2 12h20"/></svg>
+              <span>AI Insights</span>
+            </button>
+          </nav>
+        </div>
 
-  <!-- ── MAIN TAB NAVIGATION ──────────────────────────────────────────── -->
-  <nav class="tab-nav" id="tab-nav">
-    <button class="tab-nav-btn active" id="tab-btn-monitor"      onclick="switchTab('monitor')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-      Live Monitor
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-patients"   onclick="switchTab('patients')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Patients
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-cohort"     onclick="switchTab('cohort')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Cohort
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-spectrogram" onclick="switchTab('spectrogram')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2M6 8v8M10 5v14M14 9v6M18 6v12M22 10v4"/></svg>
-      Spectrogram
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-ai"         onclick="switchTab('ai')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M2 8h20v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8Z"/><path d="M8 8v12"/><path d="M16 8v12"/><path d="M2 12h20"/></svg>
-      AI Insights
-    </button>
-  </nav>
+        <!-- ── SECTION 4: HARDWARE BRIDGE OPTIONS & CONTROLS ── -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>
+            Hardware Bridge
+          </div>
+          <div class="sidebar-hardware-group">
+            <button class="btn-hardware sidebar-hw-btn" id="btn-web-serial" onclick="connectWebSerial()" title="Direct USB connection to ESP32-S3 COM Port">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              <span>Connect USB Serial</span>
+            </button>
+            <button class="btn-hardware sidebar-hw-btn" id="btn-web-ble" onclick="connectWebBluetooth()" title="Direct Bluetooth Low Energy connection">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
+              <span>Connect BLE</span>
+            </button>
+            <button class="btn-hardware sidebar-hw-btn active" id="btn-web-socket" onclick="reconnectWebSocket()" title="Wi-Fi / Local Server WebSocket bridge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+              <span>Server WebSocket (Live)</span>
+            </button>
+          </div>
+
+          <div class="sidebar-pins-wrap">
+            <div class="sidebar-pins-title">Sensor Pinout</div>
+            <div class="hardware-flow-pills sidebar-flow-pills">
+              <span class="pin-chip active" id="chip-mic"  title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">INMP441</span>
+              <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">MLX90614</span>
+              <span class="pin-chip active" id="chip-imu"  title="I2C: SDA=GPIO8, SCL=GPIO9">MPU6050</span>
+              <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">Flex ADC</span>
+              <span class="pin-chip active" id="chip-led"  title="NeoPixel Status LED">LED: 48</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── SECTION 5: COLOR THEMES ── -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/></svg>
+            Color Theme
+          </div>
+          <div class="sidebar-palette-row">
+            <div class="color-swatch swatch-cyberpunk active" onclick="setPalette('cyberpunk')" title="Cyberpunk Clinical"></div>
+            <div class="color-swatch swatch-emerald"  onclick="setPalette('emerald')"  title="Bioluminescent Emerald"></div>
+            <div class="color-swatch swatch-arctic"   onclick="setPalette('arctic')"   title="Deep Arctic Frost"></div>
+            <div class="color-swatch swatch-solar"    onclick="setPalette('solar')"    title="Thermal Diagnostic"></div>
+            <div class="color-swatch swatch-amethyst" onclick="setPalette('amethyst')" title="Royal Amethyst"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── SIDEBAR FOOTER: SYSTEM STATUS ── -->
+      <div class="sidebar-footer">
+        <div class="sidebar-status-box">
+          <div class="status-indicator" id="conn-indicator">
+            <span class="dot" id="conn-dot"></span>
+            <span id="conn-text">Connecting...</span>
+          </div>
+          <div class="sidebar-pills-row">
+            <div class="status-pill" id="device-pill">ESP32-S3 N16R8</div>
+            <div class="status-pill" id="mode-pill">DEMO STREAM</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── RIGHT CONTENT AREA ──────────────────────────────────────────── -->
+    <div class="app-main-area" id="app-main-area">
+
+      <!-- Streamlined Sticky Topbar -->
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <button class="mobile-sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle Navigation">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div class="topbar-title-wrap">
+            <h1 class="topbar-title" id="topbar-page-title">Live Biomechanical &amp; Diagnostic Telemetry</h1>
+            <span class="topbar-sub">SIH 2026 Problem Statement 26004 · MDoNER</span>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-time-chip" id="topbar-time">—</div>
+        </div>
+      </header>
+
+      <!-- Alert & Offline Banners -->
+      <div class="alert-banner" id="alert-banner" style="display:none">
+        <span class="alert-icon">⚠️</span>
+        <span id="alert-text">High OA Risk Marker Detected</span>
+        <button onclick="document.getElementById('alert-banner').style.display='none'">✕</button>
+      </div>
+
+      <div class="offline-banner" id="offline-banner" style="display:none">
+        <span>📡 Offline Mode — Showing cached data. Live updates paused.</span>
+      </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════
        TAB 1: LIVE MONITOR (Original Dashboard)
@@ -726,20 +795,17 @@
     </div>
   </main>
 
-  <!-- ── REALTIME COLORS FLOATING DOCK ─────────────────────────────────── -->
-  <div class="palette-dock" id="palette-dock">
-    <div class="palette-label">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 7 7c0 2-1 3-3 3h-1a2 2 0 0 0-2 2v1a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H6a3 3 0 0 1-3-3 7 7 0 0 1 7-7z"/>
-      </svg>
-      Palette:
-    </div>
-    <div class="color-swatch swatch-cyberpunk active" onclick="setPalette('cyberpunk')" title="Cyberpunk Clinical (Cyan/Purple)"></div>
-    <div class="color-swatch swatch-emerald"  onclick="setPalette('emerald')"  title="Bioluminescent Emerald (Green/Teal)"></div>
-    <div class="color-swatch swatch-arctic"   onclick="setPalette('arctic')"   title="Deep Arctic Frost (Ice/Indigo)"></div>
-    <div class="color-swatch swatch-solar"    onclick="setPalette('solar')"    title="Thermal Diagnostic (Amber/Rose)"></div>
-    <div class="color-swatch swatch-amethyst" onclick="setPalette('amethyst')  " title="Royal Amethyst (Violet/Pink)"></div>
-  </div>
+      <!-- ── COMPACT FOOTER ────────────────────────────────────────────────── -->
+      <footer class="footer">
+        <span>SIH 2026 · Problem Statement 26004 · MDoNER</span>
+        <span class="divider-v"></span>
+        <span>AI-Assisted Early Osteoarthritis Detection System · North Eastern Region</span>
+        <span class="divider-v"></span>
+        <span id="footer-time">—</span>
+      </footer>
+
+    </div><!-- /.app-main-area -->
+  </div><!-- /.app-layout -->
 
   <!-- ── REPORT TOAST ──────────────────────────────────────────────────── -->
   <div class="report-toast" id="report-toast" style="display:none">
@@ -748,15 +814,6 @@
     <a id="report-toast-link" href="#" target="_blank" style="color:var(--color-primary)">Download PDF</a>
     <button onclick="document.getElementById('report-toast').style.display='none'">✕</button>
   </div>
-
-  <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
-  <footer class="footer">
-    <span>SIH 2026 · Problem Statement 26004 · MDoNER</span>
-    <span class="divider-v"></span>
-    <span>AI-Assisted Early Osteoarthritis Detection System · North Eastern Region</span>
-    <span class="divider-v"></span>
-    <span id="footer-time">—</span>
-  </footer>
 
   <script src="app.js"></script>
 </body>
