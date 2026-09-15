@@ -148,24 +148,154 @@ body {
   100% { transform: scale(0.95) rotate(-3deg); opacity: 0.55; }
 }
 
-/* ── HEADER ─────────────────────────────────────────────────── */
+/* ── HEADER (slim top bar with logo + status) ────────────────── */
 .header {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 100;
+  left: 0;
+  right: 0;
+  z-index: 200;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 32px;
-  background: rgba(5, 10, 24, 0.65);
+  gap: 20px;
+  padding: 0 24px 0 16px;
+  height: 56px;
+  background: rgba(5, 10, 24, 0.82);
   border-bottom: 1px solid var(--glass-border);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
-  gap: 16px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+}
+.header-status-bar { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+
+/* ── LEFT SIDEBAR ────────────────────────────────────────────── */
+.left-sidebar {
+  position: fixed;
+  top: 56px;
+  left: 0;
+  width: 220px;
+  height: calc(100vh - 56px);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 12px 24px;
+  background: rgba(5, 10, 24, 0.75);
+  border-right: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: 4px 0 30px rgba(0, 0, 0, 0.4);
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-border) transparent;
+}
+.left-sidebar::-webkit-scrollbar { width: 4px; }
+.left-sidebar::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+
+.sidebar-section {
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.sidebar-section:last-child { border-bottom: none; }
+
+.sidebar-section-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-bottom: 8px; padding: 0 4px;
 }
 
-.header-left { display: flex; align-items: center; gap: 20px; }
+.sidebar-nav {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sidebar-nav-btn {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-secondary); transition: var(--spring);
+  font-family: var(--font-sans); text-align: left;
+}
+.sidebar-nav-btn svg { flex-shrink: 0; opacity: 0.7; }
+.sidebar-nav-btn:hover {
+  background: var(--glass-bg); border-color: var(--glass-border);
+  color: var(--text-primary);
+  transform: translateX(2px);
+}
+.sidebar-nav-btn.active {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary); font-weight: 600;
+}
+.sidebar-nav-btn.active svg { opacity: 1; }
+
+.sidebar-select {
+  width: 100%; padding: 7px 10px;
+  border-radius: var(--r-sm);
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  color: var(--text-primary); font-size: 13px;
+  font-family: var(--font-sans); cursor: pointer;
+  transition: var(--spring);
+}
+.sidebar-select:hover { border-color: var(--color-primary); }
+.sidebar-select option { background: #0a0f1d; }
+
+.sidebar-action-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; margin-bottom: 6px; padding: 8px 12px;
+  border-radius: var(--r-sm); font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid transparent; transition: var(--spring);
+  font-family: var(--font-sans);
+}
+.sidebar-action-btn.demo-btn {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: #030712; box-shadow: 0 3px 16px var(--color-primary-dim);
+}
+.sidebar-action-btn.demo-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 5px 24px var(--color-primary-glow);
+}
+.sidebar-action-btn.demo-btn.active {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-warning));
+  box-shadow: 0 3px 16px var(--color-accent-dim);
+}
+.sidebar-action-btn.report-btn {
+  background: var(--glass-bg); border-color: var(--glass-border);
+  color: var(--text-primary);
+}
+.sidebar-action-btn.report-btn:hover {
+  background: var(--glass-bg-hover); border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.sidebar-hw-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; margin-bottom: 5px; padding: 7px 10px;
+  border-radius: var(--r-sm); font-size: 12px; font-weight: 500;
+  cursor: pointer; background: rgba(255,255,255,0.04);
+  border: 1px solid var(--glass-border); color: var(--text-secondary);
+  transition: var(--spring); font-family: var(--font-sans); text-align: left;
+}
+.sidebar-hw-btn:hover {
+  background: var(--glass-bg-hover); border-color: var(--color-primary);
+  color: var(--text-primary); transform: translateX(2px);
+}
+.sidebar-hw-btn.active {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary); color: var(--color-primary);
+}
+
+.sidebar-pins {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sidebar-pins .pin-chip {
+  display: block; padding: 4px 8px; border-radius: 6px;
+  font-size: 11px;
+}
+
 
 .logo { display: flex; align-items: center; gap: 14px; text-decoration: none; }
 .logo-icon {
@@ -429,9 +559,19 @@ body {
 .main {
   position: relative; z-index: 1;
   padding: 24px 32px 60px;
+  margin-left: 220px;
+  margin-top: 56px;
   display: flex; flex-direction: column; gap: 24px;
-  max-width: 1850px; margin: 0 auto;
+  max-width: calc(1850px + 220px);
 }
+
+/* Offset banners and footer for sidebar layout */
+.alert-banner, .offline-banner {
+  margin-left: 220px;
+  margin-top: 56px;
+}
+.offline-banner { margin-top: 0; }
+.footer { margin-left: 220px; }
 
 /* ── KPI ROW ─────────────────────────────────────────────────── */
 .kpi-row {

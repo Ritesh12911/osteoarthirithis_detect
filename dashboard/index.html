@@ -52,137 +52,140 @@
     <div class="topographic-mesh"></div>
   </div>
 
-  <!-- ── HEADER ───────────────────────────────────────────────────────── -->
+  <!-- ── HEADER (logo + status only) ────────────────────────────────── -->
   <header class="header">
-    <div class="header-left">
-      <a href="#" class="logo">
-        <div class="logo-icon">
-          <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
-            <circle cx="14" cy="14" r="12" stroke="url(#g1)" stroke-width="2.2"/>
-            <path d="M7 14 Q10.5 7 14 14 Q17.5 21 21 14" stroke="var(--color-primary)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-            <circle cx="14" cy="14" r="3" fill="var(--color-secondary)"/>
-            <defs>
-              <linearGradient id="g1" x1="0" y1="0" x2="28" y2="28">
-                <stop stop-color="var(--color-primary)"/>
-                <stop offset="1" stop-color="var(--color-secondary)"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-        <div class="logo-text">
-          <span class="logo-title">OA<span class="accent">Detect</span> <span style="font-size: 14px; font-weight: 600; opacity: 0.8">3D</span></span>
-          <span class="logo-sub">SIH 2026 · PS-26004 · MDoNER</span>
-        </div>
-      </a>
-    </div>
-
-    <div class="header-center">
-      <div class="status-bar">
-        <div class="status-indicator" id="conn-indicator">
-          <span class="dot" id="conn-dot"></span>
-          <span id="conn-text">Connecting...</span>
-        </div>
-        <div class="divider-v"></div>
-        <div class="status-pill" id="device-pill">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-            <rect x="1" y="3" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M4 3V2a2 2 0 014 0v1" stroke="currentColor" stroke-width="1.2" fill="none"/>
-          </svg>
-          ESP32-S3 N16R8
-        </div>
-        <div class="status-pill" id="mode-pill">DEMO STREAM</div>
-      </div>
-    </div>
-
-    <div class="header-right">
-      <select class="patient-select" id="patient-select" style="border-radius: 20px;" onchange="onPatientChange(this.value)">
-        <option value="PATIENT_001">Patient 001</option>
-        <option value="PATIENT_002">Patient 002</option>
-        <option value="ALL">All Cohort</option>
-      </select>
-      <button class="btn btn-demo" id="demo-btn" onclick="toggleDemo()">
-        <span class="btn-icon">▶</span> Live Simulation
-      </button>
-      <button class="btn btn-report" id="report-btn" onclick="generateReport()" title="Export PDF Clinical Report">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+    <a href="#" class="logo">
+      <div class="logo-icon">
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+          <circle cx="14" cy="14" r="12" stroke="url(#g1)" stroke-width="2.2"/>
+          <path d="M7 14 Q10.5 7 14 14 Q17.5 21 21 14" stroke="var(--color-primary)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          <circle cx="14" cy="14" r="3" fill="var(--color-secondary)"/>
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="28" y2="28">
+              <stop stop-color="var(--color-primary)"/>
+              <stop offset="1" stop-color="var(--color-secondary)"/>
+            </linearGradient>
+          </defs>
         </svg>
-        Export PDF
-      </button>
+      </div>
+      <div class="logo-text">
+        <span class="logo-title">OA<span class="accent">Detect</span> <span style="font-size:13px;font-weight:600;opacity:.8">3D</span></span>
+        <span class="logo-sub">SIH 2026 · PS-26004 · MDoNER</span>
+      </div>
+    </a>
+    <div class="header-status-bar">
+      <div class="status-indicator">
+        <span class="dot" id="conn-dot"></span>
+        <span id="conn-text">Connecting...</span>
+      </div>
+      <div class="divider-v"></div>
+      <div class="status-pill" id="device-pill">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+          <rect x="1" y="3" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M4 3V2a2 2 0 014 0v1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+        </svg>
+        ESP32-S3 N16R8
+      </div>
+      <div class="status-pill" id="mode-pill">DEMO STREAM</div>
     </div>
   </header>
 
-  <!-- ── HARDWARE BAR ────────────────────────────────────────────────── -->
-  <div class="hardware-bar">
-    <div class="hardware-title">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
-        <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
-        <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
-        <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
-        <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
-      </svg>
-      Hardware Bridge
-    </div>
-    <div class="connector-buttons">
-      <button class="btn-hardware" id="btn-web-serial" onclick="connectWebSerial()" title="Direct USB connection to ESP32-S3 COM Port">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        <span>Connect USB Serial</span>
-      </button>
-      <button class="btn-hardware" id="btn-web-ble" onclick="connectWebBluetooth()" title="Direct Bluetooth Low Energy connection">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
-        <span>Connect BLE</span>
-      </button>
-      <button class="btn-hardware active" id="btn-web-socket" onclick="reconnectWebSocket()" title="Wi-Fi / Local Server WebSocket bridge">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
-        <span>Server WebSocket (Live)</span>
-      </button>
-    </div>
-    <div class="hardware-flow-pills">
-      <span class="pin-chip active" id="chip-mic"  title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">INMP441: GPIO 1,2,3</span>
-      <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">MLX90614: GPIO 8,9</span>
-      <span class="pin-chip active" id="chip-imu"  title="I2C: SDA=GPIO8, SCL=GPIO9">MPU6050: GPIO 8,9</span>
-      <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">Flex: GPIO 4</span>
-      <span class="pin-chip active" id="chip-led"  title="NeoPixel Status LED">LED: GPIO 48</span>
-    </div>
-  </div>
-
-  <!-- ── ALERT BANNER ─────────────────────────────────────────────────── -->
+  <!-- ── ALERT / OFFLINE BANNERS ─────────────────────────────────────── -->
   <div class="alert-banner" id="alert-banner" style="display:none">
     <span class="alert-icon">⚠️</span>
     <span id="alert-text">High OA Risk Marker Detected</span>
     <button onclick="document.getElementById('alert-banner').style.display='none'">✕</button>
   </div>
-
-  <!-- ── OFFLINE BANNER ───────────────────────────────────────────────── -->
   <div class="offline-banner" id="offline-banner" style="display:none">
     <span>📡 Offline Mode — Showing cached data. Live updates paused.</span>
   </div>
 
-  <!-- ── MAIN TAB NAVIGATION ──────────────────────────────────────────── -->
-  <nav class="tab-nav" id="tab-nav">
-    <button class="tab-nav-btn active" id="tab-btn-monitor"      onclick="switchTab('monitor')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-      Live Monitor
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-patients"   onclick="switchTab('patients')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Patients
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-cohort"     onclick="switchTab('cohort')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Cohort
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-spectrogram" onclick="switchTab('spectrogram')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2M6 8v8M10 5v14M14 9v6M18 6v12M22 10v4"/></svg>
-      Spectrogram
-    </button>
-    <button class="tab-nav-btn" id="tab-btn-ai"         onclick="switchTab('ai')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M2 8h20v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8Z"/><path d="M8 8v12"/><path d="M16 8v12"/><path d="M2 12h20"/></svg>
-      AI Insights
-    </button>
-  </nav>
+  <!-- ── LEFT SIDEBAR ─────────────────────────────────────────────────── -->
+  <aside class="left-sidebar" id="left-sidebar">
+
+    <!-- Navigation Tabs -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Navigation</div>
+      <nav class="sidebar-nav">
+        <button class="sidebar-nav-btn active" id="tab-btn-monitor" onclick="switchTab('monitor')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Live Monitor
+        </button>
+        <button class="sidebar-nav-btn" id="tab-btn-patients" onclick="switchTab('patients')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Patients
+        </button>
+        <button class="sidebar-nav-btn" id="tab-btn-cohort" onclick="switchTab('cohort')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Cohort Analytics
+        </button>
+        <button class="sidebar-nav-btn" id="tab-btn-spectrogram" onclick="switchTab('spectrogram')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2M6 8v8M10 5v14M14 9v6M18 6v12M22 10v4"/></svg>
+          Spectrogram
+        </button>
+        <button class="sidebar-nav-btn" id="tab-btn-ai" onclick="switchTab('ai')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M2 8h20v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8Z"/><path d="M8 8v12"/><path d="M16 8v12"/><path d="M2 12h20"/></svg>
+          AI Insights
+        </button>
+      </nav>
+    </div>
+
+    <!-- Patient Selection -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Patient</div>
+      <select class="sidebar-select" id="patient-select" onchange="onPatientChange(this.value)">
+        <option value="PATIENT_001">Patient 001</option>
+        <option value="PATIENT_002">Patient 002</option>
+        <option value="ALL">All Cohort</option>
+      </select>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Actions</div>
+      <button class="sidebar-action-btn demo-btn" id="demo-btn" onclick="toggleDemo()">
+        <span class="btn-icon">▶</span> Live Simulation
+      </button>
+      <button class="sidebar-action-btn report-btn" id="report-btn" onclick="generateReport()" title="Export PDF Clinical Report">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        Export PDF
+      </button>
+    </div>
+
+    <!-- Hardware Connection -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        Hardware Bridge
+      </div>
+      <button class="sidebar-hw-btn" id="btn-web-ble" onclick="connectWebBluetooth()" title="Direct Bluetooth LE connection">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
+        Connect BLE
+      </button>
+      <button class="sidebar-hw-btn active" id="btn-web-socket" onclick="reconnectWebSocket()" title="Wi-Fi WebSocket bridge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+        Server WebSocket
+      </button>
+      <button class="sidebar-hw-btn" id="btn-web-serial" onclick="connectWebSerial()" title="Direct USB Serial">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        USB Serial
+      </button>
+    </div>
+
+    <!-- Pin Mapping -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Pin Mapping</div>
+      <div class="sidebar-pins">
+        <span class="pin-chip active" id="chip-mic"  title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">🎙 GPIO 1,2,3</span>
+        <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">🌡 GPIO 8,9</span>
+        <span class="pin-chip active" id="chip-imu"  title="I2C: SDA=GPIO8, SCL=GPIO9">📐 GPIO 8,9</span>
+        <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">🦵 GPIO 4</span>
+        <span class="pin-chip active" id="chip-led"  title="NeoPixel Status LED">💡 GPIO 48</span>
+      </div>
+    </div>
+
+  </aside>
+
 
   <!-- ═══════════════════════════════════════════════════════════════════
        TAB 1: LIVE MONITOR (Original Dashboard)

@@ -1300,7 +1300,7 @@ function startClock() {
 let activeTab = 'monitor';
 function switchTab(tabId) {
   activeTab = tabId;
-  document.querySelectorAll('.tab-nav-btn').forEach(btn => {
+  document.querySelectorAll('.sidebar-nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.id === `tab-btn-${tabId}`);
   });
   document.querySelectorAll('.tab-content').forEach(panel => {
