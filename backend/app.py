@@ -139,12 +139,17 @@ def receive_data():
             })
 
         return jsonify({
-            "status":     "ok",
-            "row_id":     row_id,
-            "risk_score": result["risk_score"],
-            "risk_level": result["risk_level"],
-            "label":      result["label"],
-            "confidence": result["confidence"]
+            "status":            "ok",
+            "row_id":            row_id,
+            "risk_score":        result["risk_score"],
+            "risk_level":        result["risk_level"],
+            "kl_grade":          result.get("kl_grade", 0),
+            "kl_grade_label":    result.get("kl_grade_label", "Grade 0 (Normal)"),
+            "implant_candidacy": result.get("implant_candidacy", "Non-Surgical"),
+            "treatment_pathway": result.get("treatment_pathway", ""),
+            "abnormalities":     result.get("abnormalities", {}),
+            "label":             result["label"],
+            "confidence":        result["confidence"]
         }), 200
 
     except Exception as e:
@@ -236,9 +241,16 @@ def get_compare():
 
 
 @app.route("/api/model_info")
+@app.route("/api/ml/model-info")
 def get_model_info():
     info = inf.get_engine().get_model_info()
     return jsonify({"status": "ok", "data": info})
+
+
+@app.route("/api/ml/plots/<path:filename>")
+def get_ml_plot(filename):
+    plots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ml", "plots")
+    return send_from_directory(plots_dir, filename)
 
 
 # ─── PATIENT PROFILES ─────────────────────────────────────────────────────────

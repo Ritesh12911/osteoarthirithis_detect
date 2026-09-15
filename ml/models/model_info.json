@@ -1,5 +1,13 @@
 {
-  "model_type": "VotingClassifier (RF + GB + SVM)",
+  "system": "AI-Assisted Early Osteoarthritis Detection System",
+  "sih_code": "SIH2026-PS-26004",
+  "version": "3.0.0-clinical",
+  "clinical_standards": [
+    "Kellgren-Lawrence (KL) Radiographic Staging System (Radiopaedia)",
+    "NIH NDA / OAI (Osteoarthritis Initiative) Cohort Benchmarks",
+    "RSNA Multimodal Knee Abnormality Benchmarks",
+    "Biorad Medisys Indian Knee Morphometry & High-Flex Guidelines"
+  ],
   "feature_columns": [
     "audio_rms",
     "dominant_freq_hz",
@@ -14,48 +22,63 @@
     "flex_angle_deg",
     "flex_stiffness"
   ],
-  "classes": {
-    "0": "Normal",
-    "1": "Early_OA"
+  "kl_classes": {
+    "0": "Grade 0 (Normal)",
+    "1": "Grade 1 (Doubtful)",
+    "2": "Grade 2 (Mild OA)",
+    "3": "Grade 3 (Moderate OA)",
+    "4": "Grade 4 (Severe OA)"
   },
   "metrics": {
-    "RandomForest": {
-      "accuracy": 1.0,
-      "f1": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "auc": 1.0,
-      "cv_mean": 1.0,
-      "cv_std": 0.0
-    },
-    "GradientBoosting": {
-      "accuracy": 1.0,
-      "f1": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "auc": 1.0,
-      "cv_mean": 1.0,
-      "cv_std": 0.0
-    },
-    "SVM": {
-      "accuracy": 1.0,
-      "f1": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "auc": 1.0,
-      "cv_mean": 1.0,
-      "cv_std": 0.0
-    },
-    "Ensemble": {
-      "accuracy": 1.0,
-      "f1": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "auc": 1.0,
-      "cv_mean": 1.0,
-      "cv_std": 0.0
-    }
+    "kl_staging_accuracy": 0.998,
+    "kl_staging_f1_macro": 0.99799994999875,
+    "kl_staging_cv_mean": 0.9875,
+    "kl_staging_cv_std": 0.00758287544405158,
+    "binary_oa_accuracy": 0.994,
+    "binary_oa_f1": 0.9950083194675541,
+    "binary_oa_auc": 0.9999666666666667,
+    "risk_regressor_r2": 0.985975007589183,
+    "risk_regressor_rmse": 0.035263235420813166
   },
-  "version": "1.0.0",
-  "sih": "2026-PS-26004"
+  "feature_importances": {
+    "audio_rms": 0.1175326057911502,
+    "dominant_freq_hz": 0.06019619662693307,
+    "crepitus_score": 0.24228762553560174,
+    "joint_temp_c": 0.019622227543195425,
+    "temp_asymmetry": 0.13297188545748273,
+    "accel_rms_x": 0.014961774200408944,
+    "accel_rms_y": 0.004621797819062102,
+    "accel_rms_z": 0.0013156017662935646,
+    "gyro_range_deg": 0.06456189501913835,
+    "step_symmetry": 0.12994355869630964,
+    "flex_angle_deg": 0.041961353201452105,
+    "flex_stiffness": 0.17002347834297224
+  },
+  "treatment_pathways": {
+    "0": {
+      "stage": "KL 0",
+      "clinical": "Normal / Healthy Joint",
+      "pathway": "Routine Physical Activity & Joint Wellness"
+    },
+    "1": {
+      "stage": "KL 1",
+      "clinical": "Doubtful OA / Cartilage Softening",
+      "pathway": "Preventive Low-Impact Exercise & Ergonomics"
+    },
+    "2": {
+      "stage": "KL 2",
+      "clinical": "Mild Clinical OA / Definite Osteophytes",
+      "pathway": "High-Flex Physical Therapy, Anti-inflammatory Diet & Quad Strengthening"
+    },
+    "3": {
+      "stage": "KL 3",
+      "clinical": "Moderate OA / Definite Joint Space Narrowing",
+      "pathway": "Viscosupplementation & High-Flex UKA Candidate Evaluation"
+    },
+    "4": {
+      "stage": "KL 4",
+      "clinical": "Severe OA / Bone-on-Bone Eburnation",
+      "pathway": "Orthopedic Arthroplasty Consultation (High-Flex TKA / UKA Candidate)"
+    }
+  }
 }

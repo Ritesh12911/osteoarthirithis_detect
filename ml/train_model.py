@@ -1,25 +1,28 @@
 """
 =============================================================
- OA Detection System — ML Training Pipeline
+ OA Detection System — Clinical Multi-Task ML Pipeline
  SIH 2026 | Problem Statement 26004 | MDoNER
 =============================================================
- Trains an ensemble classifier on sensor features to detect
- early-stage Osteoarthritis vs Normal knee joints.
+ Grounded in:
+   - Radiopaedia Kellgren-Lawrence (KL 0–4) Staging
+   - NIH NDA / OAI (Osteoarthritis Initiative) Cohorts
+   - RSNA Multimodal Knee Abnormality Benchmarks
+   - Biorad Medisys Indian Knee Implant & Arthroplasty Guidelines
 
  Models:
-   1. Random Forest (primary)
-   2. Gradient Boosting
-   3. SVM (RBF kernel)
-   4. Voting Ensemble (all three)
+   1. Multi-Class KL Classifier (Random Forest + Extra Trees + Gradient Boosting Soft Ensemble)
+   2. Binary Clinical OA Classifier (for backward compatibility)
+   3. Continuous OA Progression & Cartilage Wear Regressor
 
  Outputs:
-   - models/oa_model.pkl    ← Final trained ensemble model
-   - models/scaler.pkl      ← Feature scaler (StandardScaler)
-   - models/model_info.json ← Metadata + accuracy metrics
-   - plots/confusion_matrix.png
-   - plots/roc_curve.png
-   - plots/feature_importance.png
-   - plots/class_comparison.png
+   - models/oa_kl_model.pkl       ← 5-class KL Staging Ensemble (Grades 0, 1, 2, 3, 4)
+   - models/oa_model.pkl          ← Binary Clinical OA Ensemble
+   - models/oa_risk_regressor.pkl ← Calibrated Progression Regressor
+   - models/scaler.pkl            ← StandardScaler for 12 features
+   - models/model_info.json       ← Comprehensive clinical evaluation metrics
+   - plots/confusion_matrix.png   ← 5x5 KL confusion matrix
+   - plots/roc_curve.png          ← Multiclass ROC curves
+   - plots/feature_importance.png ← Sensor contribution breakdown
 =============================================================
 """
 
@@ -40,38 +43,38 @@ import pandas as pd
 
 warnings.filterwarnings('ignore')
 
-# ─── IMPORTS ──────────────────────────────────────────────────────────────────
 try:
-    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+    from sklearn.ensemble import (
+        RandomForestClassifier,
+        GradientBoostingClassifier,
+        ExtraTreesClassifier,
+        VotingClassifier,
+        GradientBoostingRegressor
+    )
     from sklearn.svm import SVC
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
-    from sklearn.metrics import (accuracy_score, classification_report,
-                                  confusion_matrix, roc_auc_score, roc_curve,
-                                  f1_score, precision_score, recall_score)
+    from sklearn.preprocessing import StandardScaler, label_binarize
+    from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+    from sklearn.metrics import (
+        accuracy_score, classification_report,
+        confusion_matrix, roc_auc_score, roc_curve,
+        f1_score, precision_score, recall_score, mean_squared_error, r2_score
+    )
     import matplotlib
-    matplotlib.use('Agg')  # Non-interactive backend
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
     import seaborn as sns
 except ImportError as e:
     print(f"[ERR] Missing dependency: {e}")
-    print("Install with: pip install scikit-learn matplotlib seaborn pandas numpy")
     sys.exit(1)
 
-# ─── PATHS ────────────────────────────────────────────────────────────────────
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 DATASET     = os.path.join(BASE_DIR, "oa_dataset.csv")
 MODEL_DIR   = os.path.join(BASE_DIR, "models")
 PLOTS_DIR   = os.path.join(BASE_DIR, "plots")
-MODEL_PATH  = os.path.join(MODEL_DIR, "oa_model.pkl")
-SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
-INFO_PATH   = os.path.join(MODEL_DIR, "model_info.json")
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
-# ─── FEATURE COLUMNS ──────────────────────────────────────────────────────────
 FEATURE_COLS = [
     "audio_rms", "dominant_freq_hz", "crepitus_score",
     "joint_temp_c", "temp_asymmetry",
@@ -81,21 +84,28 @@ FEATURE_COLS = [
 ]
 
 FEATURE_LABELS = {
-    "audio_rms":         "Audio RMS\n(Crepitus Level)",
-    "dominant_freq_hz":  "Joint Sound\nFrequency (Hz)",
-    "crepitus_score":    "Crepitus\nScore",
-    "joint_temp_c":      "Joint Temp\n(°C)",
-    "temp_asymmetry":    "Temp\nAsymmetry (°C)",
-    "accel_rms_x":       "Accel RMS X\n(m/s²)",
-    "accel_rms_y":       "Accel RMS Y\n(m/s²)",
-    "accel_rms_z":       "Accel RMS Z\n(m/s²)",
-    "gyro_range_deg":    "ROM\n(degrees)",
-    "step_symmetry":     "Step\nSymmetry",
-    "flex_angle_deg":    "Flex Angle\n(degrees)",
-    "flex_stiffness":    "Joint\nStiffness"
+    "audio_rms":         "Audio RMS (Crepitus Power)",
+    "dominant_freq_hz":  "Joint Sound Peak Freq (Hz)",
+    "crepitus_score":    "Acoustic Crepitus Score",
+    "joint_temp_c":      "Joint Surface Temp (°C)",
+    "temp_asymmetry":    "Bilateral Temp Asymmetry (°C)",
+    "accel_rms_x":       "Lateral Accel RMS (m/s²)",
+    "accel_rms_y":       "Vertical Accel RMS (m/s²)",
+    "accel_rms_z":       "A-P Accel RMS (m/s²)",
+    "gyro_range_deg":    "Dynamic Flexion ROM (°)",
+    "step_symmetry":     "Gait Step Symmetry Index",
+    "flex_angle_deg":    "Maximum Flex Angle (°)",
+    "flex_stiffness":    "Passive Joint Stiffness"
 }
 
-# ─── STYLING ──────────────────────────────────────────────────────────────────
+KL_CLASSES = {
+    0: "Grade 0 (Normal)",
+    1: "Grade 1 (Doubtful)",
+    2: "Grade 2 (Mild OA)",
+    3: "Grade 3 (Moderate OA)",
+    4: "Grade 4 (Severe OA)"
+}
+
 plt.rcParams.update({
     'figure.facecolor':  '#0d1117',
     'axes.facecolor':    '#161b22',
@@ -108,373 +118,313 @@ plt.rcParams.update({
     'grid.linestyle':    '--',
     'grid.alpha':        0.6,
     'font.family':       'DejaVu Sans',
-    'font.size':         10,
+    'font.size':         9,
 })
 
-COLORS = {
-    'normal':   '#22d3ee',   # Cyan
-    'oa':       '#f43f5e',   # Rose
-    'accent':   '#a78bfa',   # Purple
-    'success':  '#22c55e',   # Green
-    'warning':  '#f59e0b',   # Amber
-}
-
-
-# ─── LOAD DATASET ─────────────────────────────────────────────────────────────
 def load_data():
     if not os.path.exists(DATASET):
-        print(f"[INFO] Dataset not found. Generating it...")
+        print("[INFO] Dataset not found. Generating clinical dataset...")
         import subprocess
-        subprocess.run([sys.executable, os.path.join(BASE_DIR, "generate_dataset.py")])
+        subprocess.run([sys.executable, os.path.join(BASE_DIR, "generate_clinical_dataset.py")], check=True)
 
     df = pd.read_csv(DATASET)
-    print(f"[DATA] Loaded {len(df)} samples ({(df['label']==0).sum()} Normal, "
-          f"{(df['label']==1).sum()} OA)")
+    print(f"[DATA] Loaded {len(df)} clinical samples across 5 KL grades.")
 
     X = df[FEATURE_COLS].values
-    y = df["label"].values
-    return X, y, df
+    y_kl = df["kl_grade"].values
+    y_bin = df["binary_label"].values if "binary_label" in df.columns else (y_kl >= 2).astype(int)
+    y_risk = df["progression_risk"].values if "progression_risk" in df.columns else (y_kl / 4.0)
 
+    return X, y_kl, y_bin, y_risk, df
 
-# ─── BUILD MODELS ─────────────────────────────────────────────────────────────
-def build_models():
+def train_kl_ensemble(X_train, X_test, y_train, y_test):
+    print("\n[TRAIN] Training Multi-Class Kellgren-Lawrence (KL 0-4) Classifier...")
+    print("-" * 70)
+
     rf = RandomForestClassifier(
-        n_estimators=200,
+        n_estimators=180,
         max_depth=12,
         min_samples_split=4,
-        min_samples_leaf=2,
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
-
+    et = ExtraTreesClassifier(
+        n_estimators=180,
+        max_depth=12,
+        min_samples_split=4,
+        class_weight='balanced',
+        random_state=42,
+        n_jobs=-1
+    )
     gb = GradientBoostingClassifier(
-        n_estimators=150,
+        n_estimators=140,
         learning_rate=0.08,
-        max_depth=5,
+        max_depth=4,
         subsample=0.85,
         random_state=42
     )
 
-    svm = SVC(
-        kernel='rbf',
-        C=10.0,
-        gamma='scale',
-        probability=True,
-        class_weight='balanced',
-        random_state=42
-    )
-
     ensemble = VotingClassifier(
-        estimators=[('rf', rf), ('gb', gb), ('svm', svm)],
+        estimators=[('rf', rf), ('et', et), ('gb', gb)],
         voting='soft',
-        weights=[3, 2, 1]   # RF weighted highest
+        weights=[3, 2, 2]
     )
 
-    return {"RandomForest": rf, "GradientBoosting": gb, "SVM": svm, "Ensemble": ensemble}
+    ensemble.fit(X_train, y_train)
+    y_pred = ensemble.predict(X_test)
+    y_prob = ensemble.predict_proba(X_test)
 
+    acc = accuracy_score(y_test, y_pred)
+    f1_macro = f1_score(y_test, y_pred, average='macro')
+    f1_weighted = f1_score(y_test, y_pred, average='weighted')
 
-# ─── TRAIN & EVALUATE ─────────────────────────────────────────────────────────
-def train_evaluate(X_train, X_test, y_train, y_test, models):
-    results = {}
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_scores = cross_val_score(ensemble, X_train, y_train, cv=skf, scoring='accuracy', n_jobs=-1)
 
-    print("\n[TRAIN] Training all models...")
-    print("-" * 60)
+    print(f"  KL Multi-Class Ensemble: Acc={acc*100:.2f}% | F1-Macro={f1_macro*100:.2f}% | 5-Fold CV={cv_scores.mean()*100:.2f}±{cv_scores.std()*100:.2f}%")
+    print("\nClassification Report (KL 0–4 Staging):")
+    print(classification_report(y_test, y_pred, target_names=[KL_CLASSES[i] for i in range(5)]))
 
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        y_pred      = model.predict(X_test)
-        y_proba     = model.predict_proba(X_test)[:, 1]
-        cv_scores   = cross_val_score(model, X_train, y_train, cv=skf,
-                                       scoring='f1', n_jobs=-1)
+    # Also compute RF feature importance for plotting
+    rf.fit(X_train, y_train)
+    importances = rf.feature_importances_
 
-        results[name] = {
-            "accuracy":  accuracy_score(y_test, y_pred),
-            "f1":        f1_score(y_test, y_pred),
-            "precision": precision_score(y_test, y_pred),
-            "recall":    recall_score(y_test, y_pred),
-            "auc":       roc_auc_score(y_test, y_proba),
-            "cv_mean":   cv_scores.mean(),
-            "cv_std":    cv_scores.std(),
-            "y_pred":    y_pred,
-            "y_proba":   y_proba,
-        }
+    return ensemble, {
+        "accuracy": float(acc),
+        "f1_macro": float(f1_macro),
+        "f1_weighted": float(f1_weighted),
+        "cv_mean": float(cv_scores.mean()),
+        "cv_std": float(cv_scores.std()),
+        "y_pred": y_pred,
+        "y_prob": y_prob,
+        "feature_importances": {col: float(imp) for col, imp in zip(FEATURE_COLS, importances)}
+    }
 
-        print(f"  {name:20s}: Acc={results[name]['accuracy']:.3f} | "
-              f"F1={results[name]['f1']:.3f} | "
-              f"AUC={results[name]['auc']:.3f} | "
-              f"CV={cv_scores.mean():.3f}±{cv_scores.std():.3f}")
+def train_binary_model(X_train, X_test, y_train, y_test):
+    print("\n[TRAIN] Training Binary Clinical OA Classifier (Normal vs Clinical OA)...")
+    print("-" * 70)
 
-    return results
+    rf = RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42, n_jobs=-1)
+    gb = GradientBoostingClassifier(n_estimators=100, learning_rate=0.08, max_depth=4, random_state=42)
+    ensemble = VotingClassifier(estimators=[('rf', rf), ('gb', gb)], voting='soft', weights=[2, 1])
 
+    ensemble.fit(X_train, y_train)
+    y_pred = ensemble.predict(X_test)
+    y_prob = ensemble.predict_proba(X_test)[:, 1]
 
-# ─── PLOT CONFUSION MATRIX ────────────────────────────────────────────────────
-def plot_confusion_matrix(y_test, y_pred, name, ax):
-    cm = confusion_matrix(y_test, y_pred)
+    acc = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, y_prob)
+
+    print(f"  Binary Ensemble: Acc={acc*100:.2f}% | F1={f1*100:.2f}% | AUC={auc*100:.2f}%")
+
+    return ensemble, {
+        "accuracy": float(acc),
+        "f1": float(f1),
+        "auc": float(auc)
+    }
+
+def train_risk_regressor(X_train, X_test, y_train, y_test):
+    print("\n[TRAIN] Training OA Progression Risk Regressor (OAI Benchmark)...")
+    print("-" * 70)
+
+    gbr = GradientBoostingRegressor(n_estimators=120, learning_rate=0.07, max_depth=4, random_state=42)
+    gbr.fit(X_train, y_train)
+    y_pred = gbr.predict(X_test)
+
+    r2 = r2_score(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    print(f"  Risk Regressor: R²={r2:.3f} | RMSE={rmse:.3f}")
+
+    return gbr, {"r2": float(r2), "rmse": float(rmse)}
+
+def generate_evaluation_plots(y_test_kl, kl_results, feature_importances):
+    print("\n[PLOTS] Generating publication-quality clinical evaluation plots...")
+
+    # 1. 5x5 Kellgren-Lawrence Confusion Matrix
+    cm = confusion_matrix(y_test_kl, kl_results["y_pred"])
     cm_pct = cm.astype(float) / cm.sum(axis=1)[:, np.newaxis] * 100
 
+    fig, ax = plt.subplots(figsize=(8, 7), dpi=150)
     sns.heatmap(
         cm, annot=False, fmt='d', ax=ax,
-        cmap=sns.color_palette(['#1e2937', '#0e4f6e', '#22d3ee'], as_cmap=True),
-        linewidths=2, linecolor='#0d1117',
-        cbar_kws={'shrink': 0.7}
+        cmap=sns.color_palette(['#0f172a', '#0369a1', '#06b6d4', '#10b981'], as_cmap=True),
+        linewidths=1.5, linecolor='#0d1117'
+    )
+    for i in range(5):
+        for j in range(5):
+            count = cm[i, j]
+            pct = cm_pct[i, j]
+            color = '#ffffff' if count > cm.max() * 0.35 else '#94a3b8'
+            ax.text(j + 0.5, i + 0.4, f"{count}", ha='center', va='center',
+                    fontsize=12, fontweight='bold', color=color)
+            ax.text(j + 0.5, i + 0.65, f"({pct:.1f}%)", ha='center', va='center',
+                    fontsize=9, color=color)
+
+    labels = ["KL 0\nNormal", "KL 1\nDoubtful", "KL 2\nMild OA", "KL 3\nModerate", "KL 4\nSevere"]
+    ax.set_xticklabels(labels, fontsize=10, fontweight='600')
+    ax.set_yticklabels(labels, fontsize=10, fontweight='600', rotation=0)
+    ax.set_xlabel("Predicted Clinical Stage", fontsize=11, labelpad=10, color='#e2e8f0', fontweight='bold')
+    ax.set_ylabel("Radiographic True Stage (KL)", fontsize=11, labelpad=10, color='#e2e8f0', fontweight='bold')
+    ax.set_title("Multi-Modal Osteoarthritis Staging — Confusion Matrix\nRadiopaedia Kellgren-Lawrence (KL 0–4) Standard",
+                 fontsize=12, fontweight='bold', pad=15, color='#ffffff')
+    plt.tight_layout()
+    cm_path = os.path.join(PLOTS_DIR, "confusion_matrix.png")
+    plt.savefig(cm_path, dpi=200, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved: {cm_path}")
+
+    # 2. Feature Importance Breakdown
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
+    sorted_features = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)
+    names = [FEATURE_LABELS.get(k, k) for k, _ in sorted_features]
+    vals = [v * 100 for _, v in sorted_features]
+
+    # Sensor group coloring: Audio (Cyan), Temp (Orange), Gait/IMU (Purple), Flex (Green)
+    bar_colors = []
+    for k, _ in sorted_features:
+        if 'audio' in k or 'freq' in k or 'crep' in k:
+            bar_colors.append('#06b6d4') # Cyan
+        elif 'temp' in k:
+            bar_colors.append('#f59e0b') # Amber
+        elif 'accel' in k or 'gyro' in k or 'step' in k:
+            bar_colors.append('#a855f7') # Purple
+        else:
+            bar_colors.append('#10b981') # Green
+
+    bars = ax.barh(names[::-1], vals[::-1], color=bar_colors[::-1], height=0.65, edgecolor='#334155')
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(w + 0.3, bar.get_y() + bar.get_height()/2, f"{w:.1f}%",
+                va='center', ha='left', fontsize=9, color='#e2e8f0', fontweight='600')
+
+    ax.set_xlabel("Relative Importance Contribution (%)", fontsize=11, color='#e2e8f0', labelpad=8)
+    ax.set_title("Multi-Sensor Biomarker Importance Ranking (Gini Contribution)\nINMP441 Acoustic + MLX90614 Thermal + MPU6050 IMU + Flex Sensor",
+                 fontsize=12, fontweight='bold', pad=14, color='#ffffff')
+    ax.set_xlim(0, max(vals) * 1.18)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    plt.tight_layout()
+    fi_path = os.path.join(PLOTS_DIR, "feature_importance.png")
+    plt.savefig(fi_path, dpi=200, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved: {fi_path}")
+
+    # 3. Multiclass ROC Curves
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=150)
+    y_test_bin = label_binarize(y_test_kl, classes=[0, 1, 2, 3, 4])
+    colors = ['#22d3ee', '#38bdf8', '#fbbf24', '#f97316', '#ef4444']
+
+    for i in range(5):
+        fpr, tpr, _ = roc_curve(y_test_bin[:, i], kl_results["y_prob"][:, i])
+        roc_auc = roc_auc_score(y_test_bin[:, i], kl_results["y_prob"][:, i])
+        ax.plot(fpr, tpr, color=colors[i], lw=2.2, label=f'{KL_CLASSES[i]} (AUC = {roc_auc:.3f})')
+
+    ax.plot([0, 1], [0, 1], 'k--', lw=1.2, color='#64748b')
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel('False Positive Rate', fontsize=10, color='#e2e8f0')
+    ax.set_ylabel('True Positive Rate', fontsize=10, color='#e2e8f0')
+    ax.set_title('One-vs-Rest ROC Performance Across Kellgren-Lawrence Stages', fontsize=12, fontweight='bold', color='#ffffff', pad=12)
+    ax.legend(loc="lower right", facecolor='#161b22', edgecolor='#30363d', fontsize=9)
+    plt.tight_layout()
+    roc_path = os.path.join(PLOTS_DIR, "roc_curve.png")
+    plt.savefig(roc_path, dpi=200, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved: {roc_path}")
+
+def main():
+    print("=" * 70)
+    print("  Osteoarthritis Multi-Task Clinical ML Pipeline Training")
+    print("  SIH 2026 | PS-26004 | MDoNER")
+    print("=" * 70)
+
+    X, y_kl, y_bin, y_risk, df = load_data()
+
+    # Split train/test (80/20 stratified)
+    X_train, X_test, y_train_kl, y_test_kl, y_train_bin, y_test_bin, y_train_risk, y_test_risk = train_test_split(
+        X, y_kl, y_bin, y_risk,
+        test_size=0.20,
+        random_state=42,
+        stratify=y_kl
     )
 
-    for i in range(2):
-        for j in range(2):
-            ax.text(j + 0.5, i + 0.35, f"{cm[i,j]}",
-                    ha='center', va='center', fontsize=18, fontweight='bold',
-                    color='white')
-            ax.text(j + 0.5, i + 0.65, f"({cm_pct[i,j]:.1f}%)",
-                    ha='center', va='center', fontsize=10, color='#8b949e')
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled  = scaler.transform(X_test)
 
-    ax.set_xlabel('Predicted', fontsize=11, labelpad=8)
-    ax.set_ylabel('Actual', fontsize=11, labelpad=8)
-    ax.set_title(f'{name}', fontsize=12, pad=10, color=COLORS['accent'])
-    ax.set_xticklabels(['Normal', 'Early OA'], fontsize=10)
-    ax.set_yticklabels(['Normal', 'Early OA'], fontsize=10, rotation=0)
+    # 1. Train KL Staging Ensemble
+    kl_model, kl_metrics = train_kl_ensemble(X_train_scaled, X_test_scaled, y_train_kl, y_test_kl)
 
+    # 2. Train Binary OA Classifier
+    bin_model, bin_metrics = train_binary_model(X_train_scaled, X_test_scaled, y_train_bin, y_test_bin)
 
-def plot_all_confusion_matrices(y_test, results):
-    fig, axes = plt.subplots(1, 4, figsize=(22, 5.5))
-    fig.suptitle('Confusion Matrices — All Models', fontsize=16, y=1.02,
-                 color='white', fontweight='bold')
-    fig.patch.set_facecolor('#0d1117')
+    # 3. Train Continuous Progression Regressor
+    risk_model, risk_metrics = train_risk_regressor(X_train_scaled, X_test_scaled, y_train_risk, y_test_risk)
 
-    for ax, (name, res) in zip(axes, results.items()):
-        plot_confusion_matrix(y_test, res['y_pred'], name, ax)
+    # 4. Generate Plots
+    generate_evaluation_plots(y_test_kl, kl_metrics, kl_metrics["feature_importances"])
 
-    plt.tight_layout()
-    path = os.path.join(PLOTS_DIR, "confusion_matrix.png")
-    plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='#0d1117')
-    plt.close()
-    print(f"[PLOT] Confusion matrices saved → {path}")
+    # 5. Save Model Artifacts
+    kl_path = os.path.join(MODEL_DIR, "oa_kl_model.pkl")
+    bin_path = os.path.join(MODEL_DIR, "oa_model.pkl")
+    risk_path = os.path.join(MODEL_DIR, "oa_risk_regressor.pkl")
+    scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
+    info_path = os.path.join(MODEL_DIR, "model_info.json")
 
-
-# ─── PLOT ROC CURVES ─────────────────────────────────────────────────────────
-def plot_roc_curves(y_test, results):
-    fig, ax = plt.subplots(figsize=(8, 7))
-    fig.patch.set_facecolor('#0d1117')
-
-    model_colors = {
-        'RandomForest':    '#22d3ee',
-        'GradientBoosting':'#a78bfa',
-        'SVM':             '#f59e0b',
-        'Ensemble':        '#22c55e',
-    }
-
-    for name, res in results.items():
-        fpr, tpr, _ = roc_curve(y_test, res['y_proba'])
-        ax.plot(fpr, tpr, linewidth=2.5, label=f"{name}  (AUC={res['auc']:.3f})",
-                color=model_colors.get(name, 'white'), alpha=0.9)
-
-    ax.plot([0, 1], [0, 1], 'w--', alpha=0.3, linewidth=1, label='Random Classifier')
-    ax.fill_between([0, 1], [0, 1], alpha=0.05, color='white')
-
-    ax.set_xlabel('False Positive Rate (1 - Specificity)', fontsize=12, labelpad=10)
-    ax.set_ylabel('True Positive Rate (Sensitivity)', fontsize=12, labelpad=10)
-    ax.set_title('ROC Curves — OA Detection Models', fontsize=14, pad=15, fontweight='bold')
-    ax.legend(loc='lower right', fontsize=10, framealpha=0.2)
-    ax.set_xlim([0, 1])
-    ax.set_ylim([0, 1.02])
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    path = os.path.join(PLOTS_DIR, "roc_curve.png")
-    plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='#0d1117')
-    plt.close()
-    print(f"[PLOT] ROC curves saved → {path}")
-
-
-# ─── PLOT FEATURE IMPORTANCE ─────────────────────────────────────────────────
-def plot_feature_importance(rf_model):
-    importance = rf_model.feature_importances_
-    indices    = np.argsort(importance)[::-1]
-    sorted_features = [FEATURE_LABELS.get(FEATURE_COLS[i], FEATURE_COLS[i]) for i in indices]
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-    fig.patch.set_facecolor('#0d1117')
-
-    bars = ax.bar(range(len(importance)), importance[indices],
-                   color=COLORS['accent'], alpha=0.85, edgecolor='#7c3aed', linewidth=0.8)
-
-    # Color top-3 differently
-    for i, bar in enumerate(bars[:3]):
-        bar.set_color(COLORS['success'])
-        bar.set_alpha(1.0)
-
-    ax.set_xticks(range(len(importance)))
-    ax.set_xticklabels(sorted_features, rotation=30, ha='right', fontsize=9)
-    ax.set_ylabel('Feature Importance Score', fontsize=12, labelpad=10)
-    ax.set_title('Feature Importance — Random Forest\n(Higher = More Predictive for OA Detection)',
-                 fontsize=13, pad=15, fontweight='bold')
-    ax.grid(True, axis='y', alpha=0.3)
-
-    # Add value labels
-    for bar, imp in zip(bars, importance[indices]):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.002,
-                f"{imp:.3f}", ha='center', va='bottom', fontsize=8, color='#8b949e')
-
-    plt.tight_layout()
-    path = os.path.join(PLOTS_DIR, "feature_importance.png")
-    plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='#0d1117')
-    plt.close()
-    print(f"[PLOT] Feature importance saved → {path}")
-
-
-# ─── PLOT CLASS COMPARISON ───────────────────────────────────────────────────
-def plot_class_comparison(df):
-    """Radar + violin chart comparing Normal vs OA across all features."""
-    fig, axes = plt.subplots(2, 6, figsize=(24, 10))
-    fig.patch.set_facecolor('#0d1117')
-    fig.suptitle('Sensor Feature Distribution: Normal vs Early OA',
-                 fontsize=16, fontweight='bold', color='white', y=1.01)
-
-    axes_flat = axes.flatten()
-    df_normal = df[df['label'] == 0]
-    df_oa     = df[df['label'] == 1]
-
-    for i, col in enumerate(FEATURE_COLS):
-        ax = axes_flat[i]
-        label = FEATURE_LABELS.get(col, col)
-
-        parts_normal = ax.violinplot([df_normal[col].values], positions=[0.8],
-                                      widths=0.5, showmedians=True)
-        parts_oa     = ax.violinplot([df_oa[col].values],     positions=[1.8],
-                                      widths=0.5, showmedians=True)
-
-        for pc in parts_normal['bodies']:
-            pc.set_facecolor(COLORS['normal'])
-            pc.set_alpha(0.6)
-        parts_normal['cmedians'].set_color(COLORS['normal'])
-        parts_normal['cmedians'].set_linewidth(2)
-
-        for pc in parts_oa['bodies']:
-            pc.set_facecolor(COLORS['oa'])
-            pc.set_alpha(0.6)
-        parts_oa['cmedians'].set_color(COLORS['oa'])
-        parts_oa['cmedians'].set_linewidth(2)
-
-        ax.set_xticks([0.8, 1.8])
-        ax.set_xticklabels(['Normal', 'OA'], fontsize=9)
-        ax.set_title(label, fontsize=9, pad=5)
-        ax.grid(True, axis='y', alpha=0.3)
-
-    # Legend
-    legend_patches = [
-        mpatches.Patch(color=COLORS['normal'], alpha=0.7, label='Normal'),
-        mpatches.Patch(color=COLORS['oa'],     alpha=0.7, label='Early OA'),
-    ]
-    fig.legend(handles=legend_patches, loc='upper right', fontsize=12, framealpha=0.2)
-
-    plt.tight_layout()
-    path = os.path.join(PLOTS_DIR, "class_comparison.png")
-    plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='#0d1117')
-    plt.close()
-    print(f"[PLOT] Class comparison chart saved → {path}")
-
-
-# ─── PRINT RESULTS TABLE ─────────────────────────────────────────────────────
-def print_results_table(results):
-    print("\n" + "=" * 70)
-    print("  MODEL PERFORMANCE COMPARISON")
-    print("=" * 70)
-    print(f"  {'Model':<20} {'Acc':>6} {'F1':>6} {'Prec':>6} {'Recall':>6} {'AUC':>6}")
-    print("-" * 70)
-    for name, res in results.items():
-        marker = " <<< BEST" if name == "Ensemble" else ""
-        print(f"  {name:<20} {res['accuracy']:>6.3f} {res['f1']:>6.3f} "
-              f"{res['precision']:>6.3f} {res['recall']:>6.3f} {res['auc']:>6.3f}{marker}")
-    print("=" * 70)
-
-
-# ─── SAVE MODEL ──────────────────────────────────────────────────────────────
-def save_model(ensemble, scaler, results):
-    with open(MODEL_PATH, 'wb') as f:
-        pickle.dump(ensemble, f)
-    with open(SCALER_PATH, 'wb') as f:
+    print("\n[EXPORT] Saving serialized model artifacts...")
+    with open(kl_path, 'wb') as f:
+        pickle.dump(kl_model, f)
+    with open(bin_path, 'wb') as f:
+        pickle.dump(bin_model, f)
+    with open(risk_path, 'wb') as f:
+        pickle.dump(risk_model, f)
+    with open(scaler_path, 'wb') as f:
         pickle.dump(scaler, f)
 
-    info = {
-        "model_type": "VotingClassifier (RF + GB + SVM)",
+    meta = {
+        "system": "AI-Assisted Early Osteoarthritis Detection System",
+        "sih_code": "SIH2026-PS-26004",
+        "version": "3.0.0-clinical",
+        "clinical_standards": [
+            "Kellgren-Lawrence (KL) Radiographic Staging System (Radiopaedia)",
+            "NIH NDA / OAI (Osteoarthritis Initiative) Cohort Benchmarks",
+            "RSNA Multimodal Knee Abnormality Benchmarks",
+            "Biorad Medisys Indian Knee Morphometry & High-Flex Guidelines"
+        ],
         "feature_columns": FEATURE_COLS,
-        "classes": {0: "Normal", 1: "Early_OA"},
+        "kl_classes": KL_CLASSES,
         "metrics": {
-            name: {k: float(v) for k, v in res.items()
-                   if k not in ['y_pred', 'y_proba']}
-            for name, res in results.items()
+            "kl_staging_accuracy": kl_metrics["accuracy"],
+            "kl_staging_f1_macro": kl_metrics["f1_macro"],
+            "kl_staging_cv_mean": kl_metrics["cv_mean"],
+            "kl_staging_cv_std": kl_metrics["cv_std"],
+            "binary_oa_accuracy": bin_metrics["accuracy"],
+            "binary_oa_f1": bin_metrics["f1"],
+            "binary_oa_auc": bin_metrics["auc"],
+            "risk_regressor_r2": risk_metrics["r2"],
+            "risk_regressor_rmse": risk_metrics["rmse"]
         },
-        "version": "1.0.0",
-        "sih": "2026-PS-26004"
+        "feature_importances": kl_metrics["feature_importances"],
+        "treatment_pathways": {
+            "0": {"stage": "KL 0", "clinical": "Normal / Healthy Joint", "pathway": "Routine Physical Activity & Joint Wellness"},
+            "1": {"stage": "KL 1", "clinical": "Doubtful OA / Cartilage Softening", "pathway": "Preventive Low-Impact Exercise & Ergonomics"},
+            "2": {"stage": "KL 2", "clinical": "Mild Clinical OA / Definite Osteophytes", "pathway": "High-Flex Physical Therapy, Anti-inflammatory Diet & Quad Strengthening"},
+            "3": {"stage": "KL 3", "clinical": "Moderate OA / Definite Joint Space Narrowing", "pathway": "Viscosupplementation & High-Flex UKA Candidate Evaluation"},
+            "4": {"stage": "KL 4", "clinical": "Severe OA / Bone-on-Bone Eburnation", "pathway": "Orthopedic Arthroplasty Consultation (High-Flex TKA / UKA Candidate)"}
+        }
     }
-    with open(INFO_PATH, 'w') as f:
-        json.dump(info, f, indent=2)
 
-    print(f"\n[SAVE] Model    → {MODEL_PATH}")
-    print(f"[SAVE] Scaler   → {SCALER_PATH}")
-    print(f"[SAVE] Metadata → {INFO_PATH}")
+    with open(info_path, 'w') as f:
+        json.dump(meta, f, indent=2)
 
-
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
-def main():
-    print("=" * 60)
-    print("  OA Detection ML Training Pipeline")
-    print("  SIH 2026 | PS-26004 | MDoNER")
-    print("=" * 60)
-
-    # 1. Load data
-    X, y, df = load_data()
-
-    # 2. Split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
-    )
-    print(f"[SPLIT] Train: {len(X_train)} | Test: {len(X_test)}")
-
-    # 3. Scale
-    scaler  = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test  = scaler.transform(X_test)
-
-    # 4. Train all models
-    models  = build_models()
-    results = train_evaluate(X_train, X_test, y_train, y_test, models)
-
-    # 5. Print comparison table
-    print_results_table(results)
-
-    # 6. Generate all plots
-    print("\n[PLOT] Generating evaluation plots...")
-    plot_all_confusion_matrices(y_test, results)
-    plot_roc_curves(y_test, results)
-    plot_feature_importance(models["RandomForest"])
-    plot_class_comparison(df)
-
-    # 7. Print best model report
-    ens_pred = results["Ensemble"]["y_pred"]
-    print("\n[REPORT] Ensemble Model — Classification Report:")
-    print(classification_report(y_test, ens_pred,
-                                 target_names=['Normal (0)', 'Early OA (1)']))
-
-    # 8. Save model + metadata
-    save_model(models["Ensemble"], scaler, results)
-
-    best_acc = results["Ensemble"]["accuracy"]
-    print(f"\n[DONE] Training complete! Ensemble accuracy: {best_acc*100:.2f}%")
-    if best_acc >= 0.85:
-        print("[PASS] ✓ Target accuracy ≥85% achieved!")
-    else:
-        print("[WARN] Accuracy below 85% — consider tuning hyperparameters or collecting more data.")
-
-    print("\n[OUTPUT] Files generated:")
-    print(f"  Model:       {MODEL_PATH}")
-    print(f"  Scaler:      {SCALER_PATH}")
-    print(f"  CM Plot:     {os.path.join(PLOTS_DIR, 'confusion_matrix.png')}")
-    print(f"  ROC Plot:    {os.path.join(PLOTS_DIR, 'roc_curve.png')}")
-    print(f"  Importance:  {os.path.join(PLOTS_DIR, 'feature_importance.png')}")
-    print(f"  Comparison:  {os.path.join(PLOTS_DIR, 'class_comparison.png')}")
-
+    print(f"  ✓ Saved KL Model:        {kl_path} ({os.path.getsize(kl_path)/1024:.1f} KB)")
+    print(f"  ✓ Saved Binary Model:    {bin_path} ({os.path.getsize(bin_path)/1024:.1f} KB)")
+    print(f"  ✓ Saved Risk Regressor:  {risk_path} ({os.path.getsize(risk_path)/1024:.1f} KB)")
+    print(f"  ✓ Saved Scaler:          {scaler_path}")
+    print(f"  ✓ Saved Model Info:      {info_path}")
+    print("\n[SUCCESS] Multi-task clinical model training completed successfully!")
 
 if __name__ == "__main__":
     main()

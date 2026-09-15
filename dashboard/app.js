@@ -709,7 +709,9 @@ function handleLiveData(payload) {
 
   // 2. Update Risk Gauge
   const riskScore = inf.risk_score !== undefined ? inf.risk_score : 0;
-  drawGauge(riskScore, inf.risk_level);
+  const klLabel = inf.kl_grade_label || (inf.kl_grade !== undefined ? `KL Grade ${inf.kl_grade}` : null);
+  const implant = inf.implant_candidacy || null;
+  drawGauge(riskScore, inf.risk_level, klLabel, implant);
 
   // 3. Update Line Charts
   appendChartData(payload);
@@ -816,7 +818,7 @@ function updateSensorCards(p) {
 }
 
 // ── GAUGE (CANVAS DRAWING) ─────────────────────────────────────
-function drawGauge(score, level = 'LOW') {
+function drawGauge(score, level = 'LOW', klLabel = null, implant = null) {
   const canvas = document.getElementById('gauge-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -859,6 +861,19 @@ function drawGauge(score, level = 'LOW') {
   if (lvlEl) {
     lvlEl.textContent = level;
     lvlEl.style.color = gradColor;
+  }
+
+  // KL Staging & Biorad Medisys Implant Candidacy
+  const klEl = document.getElementById('kl-stage-badge');
+  if (klEl) {
+    const text = klLabel || (score < 0.25 ? 'KL 0 (Normal)' : (score < 0.50 ? 'KL 1 (Doubtful)' : (score < 0.75 ? 'KL 2 (Mild OA)' : 'KL 3-4 (Advanced)')));
+    klEl.textContent = text;
+    klEl.style.color = gradColor;
+    klEl.style.borderColor = gradColor;
+  }
+  const impEl = document.getElementById('implant-candidacy-badge');
+  if (impEl && implant) {
+    impEl.textContent = implant;
   }
 
   // Update card border pulse

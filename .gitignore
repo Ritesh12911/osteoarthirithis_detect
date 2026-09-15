@@ -22,7 +22,8 @@ ENV/
 Thumbs.db
 
 # Database (regenerated automatically by database.py on startup)
-backend/oa_sessions.db
+backend/oa_sessions.db*
+backend/*.db*
 
 # Generated PDF reports
 backend/reports/*.pdf
