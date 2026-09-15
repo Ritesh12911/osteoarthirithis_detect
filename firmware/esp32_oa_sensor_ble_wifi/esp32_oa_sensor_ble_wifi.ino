@@ -333,7 +333,7 @@ static const float FFT_FREQS[16] = {
 };
 
 void computeFftBins(const int32_t* buf, int samples, uint8_t* out16) {
-  float maxMag = 1.0f;
+  float maxMag = 0.01f;
   float mags[16] = {};
 
   for (int b = 0; b < 16; b++) {
@@ -564,7 +564,7 @@ void startBLEService() {
   bleServer = BLEDevice::createServer();
   bleServer->setCallbacks(new BleServerCallbacks());
 
-  BLEService *service = bleServer->createService(BLE_SERVICE_UUID);
+  BLEService *service = bleServer->createService(BLE_SERVICE_UUID, 30);
 
   // ── Characteristic 1: Live Sensor Notify ────────────────────────────────────
   bleSensorCharacteristic = service->createCharacteristic(

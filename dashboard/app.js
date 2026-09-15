@@ -1879,6 +1879,167 @@ function appendCrepEvent(freq, db) {
   if (log.children.length > 8) log.removeChild(log.lastChild);
 }
 
+// ── ESP32 BLE DIRECT SPECTROGRAM STREAMING ─────────────────────
+const BLE_OA_SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
+const BLE_OA_FFT_UUID     = '12345678-1234-5678-1234-56789abcdef3';
+const BLE_OA_SENSOR_UUID  = '12345678-1234-5678-1234-56789abcdef1';
+
+async function toggleESP32BleSpectrogram() {
+  const btn = document.getElementById('spec-ble-btn');
+
+  // If already active, toggle off
+  if (specState.bleActive) {
+    stopESP32BleSpectrogram();
+    return;
+  }
+
+  if (!('bluetooth' in navigator)) {
+    alert('Web Bluetooth API is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Bluefy on iOS.');
+    return;
+  }
+
+  // Stop other active spectrogram sources
+  if (specState.simActive) toggleSimulatedSpectrogram();
+  if (specState.micActive) toggleMicSpectrogram();
+
+  if (btn) {
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px"></span> Connecting...';
+  }
+
+  try {
+    let server = state.bleServer;
+    let service = null;
+
+    // 1. Try to reuse existing connected GATT server
+    if (server && server.connected) {
+      try {
+        service = await server.getPrimaryService(BLE_OA_SERVICE_UUID);
+      } catch (err) {
+        console.warn('[BLE-SPEC] Existing GATT server lost service, requesting fresh:', err);
+        server = null;
+      }
+    }
+
+    // 2. If not connected, prompt device picker
+    if (!service) {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: 'OA_Detector_SIH2026' }],
+        optionalServices: [BLE_OA_SERVICE_UUID]
+      });
+
+      device.addEventListener('gattserverdisconnected', () => {
+        console.warn('[BLE-SPEC] ESP32-S3 GATT disconnected');
+        stopESP32BleSpectrogram();
+        const mainBleBtn = document.getElementById('btn-web-ble');
+        if (mainBleBtn) { mainBleBtn.classList.remove('active'); mainBleBtn.innerHTML = '⬡ BLE Connect'; }
+        setDeviceStatus(false);
+        setConnStatus('error', 'BLE Disconnected');
+      });
+
+      server = await device.gatt.connect();
+      state.bleDevice = device;
+      state.bleServer = server;
+
+      service = await server.getPrimaryService(BLE_OA_SERVICE_UUID);
+
+      // Also subscribe to telemetry char ..def1 so dashboard gets all sensor values
+      try {
+        const sensorChar = await service.getCharacteristic(BLE_OA_SENSOR_UUID);
+        await sensorChar.startNotifications();
+        sensorChar.addEventListener('characteristicvaluechanged', (ev) => {
+          const text = new TextDecoder().decode(ev.target.value);
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed.status !== 'waiting') handleHardwarePayload(parsed);
+          } catch (e) {}
+        });
+        state.bleSensorChar = sensorChar;
+        const mainBleBtn = document.getElementById('btn-web-ble');
+        if (mainBleBtn) { mainBleBtn.classList.add('active'); mainBleBtn.innerHTML = '<span style="color:#10b981">●</span> BLE Connected'; }
+        setDeviceStatus(true, 'BLE 5.0 — OA_Detector_SIH2026');
+        setConnStatus('connected', 'BLE Direct');
+      } catch (e) {
+        console.warn('[BLE-SPEC] Telemetry char subscribe notice:', e);
+      }
+    }
+
+    // 3. Obtain FFT characteristic ..def3
+    const fftChar = await service.getCharacteristic(BLE_OA_FFT_UUID);
+    await fftChar.startNotifications();
+
+    // 4. Handle incoming 16-bin Goertzel FFT packets (every 100ms)
+    fftChar.addEventListener('characteristicvaluechanged', (event) => {
+      if (!specState.bleActive) return;
+      const dataView = event.target.value;
+      const byteLen = dataView.byteLength;
+      if (byteLen === 0) return;
+
+      const rawBins = new Uint8Array(byteLen);
+      for (let i = 0; i < byteLen; i++) {
+        rawBins[i] = dataView.getUint8(i);
+      }
+
+      // Expand 16 frequency bins to 256 waterfall slice values via linear interpolation
+      const slice = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) {
+        const srcPos = (i / 255) * (rawBins.length - 1);
+        const lowIdx = Math.floor(srcPos);
+        const highIdx = Math.min(rawBins.length - 1, lowIdx + 1);
+        const frac = srcPos - lowIdx;
+        slice[i] = Math.round(rawBins[lowIdx] * (1 - frac) + rawBins[highIdx] * frac);
+      }
+
+      // Check for crepitus bursts in 300-800Hz region (bins ~3 to 8)
+      let crepEnergy = 0;
+      for (let b = 3; b <= 8 && b < rawBins.length; b++) {
+        crepEnergy += rawBins[b];
+      }
+      const isBurst = (crepEnergy > 400);
+
+      drawWaterfallSlice(slice);
+      updateSpectrogramHUD(slice, isBurst, isBurst ? 0.75 : 0.05, 8000);
+    });
+
+    specState.bleActive = true;
+    specState.bleChar   = fftChar;
+    specState.nyquist   = 8000;
+
+    if (btn) {
+      btn.classList.add('active');
+      btn.innerHTML = '<span style="color:#10b981">●</span> ESP32 Mic (Live)';
+    }
+    document.getElementById('spec-live-dot')?.classList.add('pulse');
+    console.info('[BLE-SPEC] Successfully streaming INMP441 FFT bins from ESP32-S3 ..def3');
+
+  } catch (err) {
+    console.error('[BLE-SPEC] Connection failed:', err);
+    stopESP32BleSpectrogram();
+    if (err.name !== 'NotFoundError') { // Not user-cancelled
+      alert('Failed to connect to ESP32 Mic via BLE:\n' + (err.message || err));
+    }
+  }
+}
+
+function stopESP32BleSpectrogram() {
+  if (specState.bleChar) {
+    try {
+      specState.bleChar.stopNotifications().catch(() => {});
+    } catch (e) {}
+  }
+  specState.bleActive = false;
+  specState.bleChar   = null;
+
+  const btn = document.getElementById('spec-ble-btn');
+  if (btn) {
+    btn.classList.remove('active');
+    btn.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
+      ESP32 Mic (BLE)
+    `;
+  }
+  document.getElementById('spec-live-dot')?.classList.remove('pulse');
+}
+
 // ── 5. AI CLINICAL INSIGHTS (CHAT, DIET, REHAB) ────────────────
 let activeAITab = 'chat';
 
