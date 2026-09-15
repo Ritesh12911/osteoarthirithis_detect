@@ -75,21 +75,35 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
+#include <BLE2902.h>
 #include <math.h>
 
-// ─── BLE WI-FI PROVISIONING ──────────────────────────────────────────────────
-#define BLE_DEVICE_NAME       "OA-ESP32-SETUP"
+// ─── BLE DIRECT STREAMING & CONFIG ────────────────────────────────────────────
+#define BLE_DEVICE_NAME       "OA_Detector_SIH2026"
 #define BLE_SERVICE_UUID      "12345678-1234-5678-1234-56789abcdef0"
-#define BLE_WIFI_CHAR_UUID    "12345678-1234-5678-1234-56789abcdef1"
-#define BLE_STATUS_CHAR_UUID  "12345678-1234-5678-1234-56789abcdef2"
+#define BLE_SENSOR_CHAR_UUID  "12345678-1234-5678-1234-56789abcdef1"  // NOTIFY Live Telemetry to Web Server / Dashboard
+#define BLE_WIFI_CHAR_UUID    "12345678-1234-5678-1234-56789abcdef2"  // WRITE WiFi Provisioning / Control
 
 BLEServer          *bleServer              = nullptr;
+BLECharacteristic  *bleSensorCharacteristic= nullptr;
 BLECharacteristic  *bleWifiCharacteristic  = nullptr;
-BLECharacteristic  *bleStatusCharacteristic= nullptr;
+volatile bool       bleConnected           = false;
 volatile bool       bleCredentialsPending  = false;
 String              blePendingSSID;
 String              blePendingPassword;
 bool                bleStarted             = false;
+
+class BleServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) override {
+    bleConnected = true;
+    Serial.println("\n[BLE] *** Client Connected! Streaming live sensor telemetry over Bluetooth. ***");
+  }
+  void onDisconnect(BLEServer* pServer) override {
+    bleConnected = false;
+    Serial.println("\n[BLE] Client disconnected. Restarting BLE advertising...");
+    pServer->startAdvertising();
+  }
+};
 
 class WiFiProvisionCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) override {
@@ -101,9 +115,9 @@ class WiFiProvisionCallbacks : public BLECharacteristicCallbacks {
 
     if (separator <= 0 || separator >= (int)value.length() - 1) {
       Serial.println("[BLE] Invalid format. Send SSID|PASSWORD");
-      if (bleStatusCharacteristic) {
-        bleStatusCharacteristic->setValue("ERROR: Use SSID|PASSWORD");
-        bleStatusCharacteristic->notify();
+      if (bleWifiCharacteristic) {
+        bleWifiCharacteristic->setValue("ERROR: Use SSID|PASSWORD");
+        bleWifiCharacteristic->notify();
       }
       return;
     }
@@ -115,14 +129,14 @@ class WiFiProvisionCallbacks : public BLECharacteristicCallbacks {
     bleCredentialsPending = true;
 
     Serial.printf("[BLE] Wi-Fi credentials received for SSID: %s\n", blePendingSSID.c_str());
-    if (bleStatusCharacteristic) {
-      bleStatusCharacteristic->setValue("RECEIVED: connecting...");
-      bleStatusCharacteristic->notify();
+    if (bleWifiCharacteristic) {
+      bleWifiCharacteristic->setValue("RECEIVED: connecting...");
+      bleWifiCharacteristic->notify();
     }
   }
 };
 
-void startBLEProvisioning();
+void startBLEService();
 void handleBLEProvisioning();
 
 // ─── DATA STRUCTURES ──────────────────────────────────────────────────────────
@@ -138,6 +152,9 @@ struct IMUFeatures {
   float accelRmsZ;
   float gyroRangeDeg;
   float stepSymmetry;
+  float pitch;
+  float roll;
+  float yaw;
 };
 
 struct TempFeatures {
@@ -332,6 +349,11 @@ IMUFeatures readIMUFeatures() {
   float vertical = fabs(accel.acceleration.z) + 0.001f;
   feat.stepSymmetry = constrain(1.0f - (lateral / vertical), 0.0f, 1.0f);
 
+  // Orientation angles (degrees) for dynamic 3D visualizer tracking
+  feat.pitch = atan2(-accel.acceleration.x, sqrt(accel.acceleration.y * accel.acceleration.y + accel.acceleration.z * accel.acceleration.z)) * (180.0f / (float)M_PI);
+  feat.roll  = atan2(accel.acceleration.y, accel.acceleration.z) * (180.0f / (float)M_PI);
+  feat.yaw   = gyro.gyro.z * (180.0f / (float)M_PI);
+
   return feat;
 }
 
@@ -401,6 +423,9 @@ void sendData(AudioFeatures& audio, TempFeatures& temp,
   doc["accel_rms_z"]       = imu.accelRmsZ;
   doc["gyro_range_deg"]    = imu.gyroRangeDeg;
   doc["step_symmetry"]     = imu.stepSymmetry;
+  doc["pitch"]             = imu.pitch;
+  doc["roll"]              = imu.roll;
+  doc["yaw"]               = imu.yaw;
 
   // Flex
   doc["flex_angle_deg"]    = flex.angleDeg;
@@ -408,6 +433,13 @@ void sendData(AudioFeatures& audio, TempFeatures& temp,
 
   String jsonStr;
   serializeJson(doc, jsonStr);
+
+  // ── BLE DIRECT SENSOR DATA TRANSMISSION ──────────────────────────────────────
+  if (bleConnected && bleSensorCharacteristic != nullptr) {
+    bleSensorCharacteristic->setValue((uint8_t*)jsonStr.c_str(), jsonStr.length());
+    bleSensorCharacteristic->notify();
+    Serial.printf("[BLE] Live telemetry sent (%d bytes)\n", jsonStr.length());
+  }
 
   // ── HTTP POST ────────────────────────────────────────────────────────────────
   if (!ENABLE_HTTP_POST) {
@@ -482,31 +514,41 @@ void saveWiFiCredentials(const String& ssid, const String& pass) {
   Serial.println("[WiFi] Credentials saved to NVS flash.");
 }
 
-// ─── BLE PROVISIONING ─────────────────────────────────────────────────────────
-void startBLEProvisioning() {
+// ─── BLE SERVICE (LIVE STREAMING + PROVISIONING) ──────────────────────────────
+// Starts BLE ALWAYS on boot:
+//   Characteristic ..def1 → NOTIFY: live JSON telemetry to dashboard / PC bridge
+//   Characteristic ..def2 → WRITE:  WiFi credentials (SSID|PASSWORD)
+void startBLEService() {
   if (bleStarted) return;
 
   Serial.println();
-  Serial.println("[BLE] Starting Bluetooth Wi-Fi provisioning...");
-  Serial.println("[BLE] Device name: OA-ESP32-SETUP");
-  Serial.println("[BLE] Use nRF Connect: write SSID|PASSWORD to char ..def1");
+  Serial.println("[BLE] Starting unified BLE service (OA_Detector_SIH2026)...");
+  Serial.println("[BLE]   Char ..def1 → NOTIFY  live sensor JSON to Web Bluetooth");
+  Serial.println("[BLE]   Char ..def2 → WRITE   WiFi credentials (SSID|PASSWORD)");
 
   BLEDevice::init(BLE_DEVICE_NAME);
   bleServer = BLEDevice::createServer();
+  bleServer->setCallbacks(new BleServerCallbacks());
 
   BLEService *service = bleServer->createService(BLE_SERVICE_UUID);
 
+  // ── Characteristic 1: Live Sensor Notify ────────────────────────────────────
+  bleSensorCharacteristic = service->createCharacteristic(
+      BLE_SENSOR_CHAR_UUID,
+      BLECharacteristic::PROPERTY_READ |
+      BLECharacteristic::PROPERTY_NOTIFY);
+  bleSensorCharacteristic->addDescriptor(new BLE2902());
+  bleSensorCharacteristic->setValue("{\"status\":\"waiting\"}");
+
+  // ── Characteristic 2: WiFi Provisioning Write ────────────────────────────────
   bleWifiCharacteristic = service->createCharacteristic(
       BLE_WIFI_CHAR_UUID,
-      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
-
-  bleStatusCharacteristic = service->createCharacteristic(
-      BLE_STATUS_CHAR_UUID,
-      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-
-  bleWifiCharacteristic->setValue("Send SSID|PASSWORD");
+      BLECharacteristic::PROPERTY_READ |
+      BLECharacteristic::PROPERTY_WRITE |
+      BLECharacteristic::PROPERTY_NOTIFY);
+  bleWifiCharacteristic->addDescriptor(new BLE2902());
+  bleWifiCharacteristic->setValue("Send SSID|PASSWORD to provision WiFi");
   bleWifiCharacteristic->setCallbacks(new WiFiProvisionCallbacks());
-  bleStatusCharacteristic->setValue("WAITING_FOR_WIFI");
 
   service->start();
 
@@ -518,7 +560,9 @@ void startBLEProvisioning() {
   BLEDevice::startAdvertising();
 
   bleStarted = true;
-  Serial.println("[BLE] *** ADVERTISING as OA-ESP32-SETUP ***");
+  Serial.println("[BLE] *** Advertising as OA_Detector_SIH2026 ***");
+  Serial.println("[BLE]     Open Web Browser at http://localhost:5000 → click BLE Connect");
+  Serial.printf("[BLE]     Or use nRF Connect: write SSID|PASSWORD to char ..def2\n");
 }
 
 void handleBLEProvisioning() {
@@ -528,23 +572,26 @@ void handleBLEProvisioning() {
   String pass = blePendingPassword;
   bleCredentialsPending = false;
 
-  Serial.printf("[BLE] Trying Wi-Fi SSID: %s\n", ssid.c_str());
+  Serial.printf("[BLE] Trying WiFi SSID: %s\n", ssid.c_str());
   setLED(255, 255, 0);
 
   saveWiFiCredentials(ssid, pass);
   bool ok = connectWiFi(20000);
 
+  String statusMsg;
   if (ok) {
-    String msg = "WIFI_CONNECTED:" + WiFi.localIP().toString();
-    bleStatusCharacteristic->setValue(msg.c_str());
-    bleStatusCharacteristic->notify();
-    Serial.println("[BLE] Wi-Fi connected successfully via BLE provisioning.");
+    statusMsg = "WIFI_CONNECTED:" + WiFi.localIP().toString();
+    Serial.println("[BLE] WiFi connected via BLE provisioning. " + statusMsg);
     setLED(0, 255, 0);
   } else {
-    bleStatusCharacteristic->setValue("WIFI_FAILED:check SSID/password/2.4GHz");
-    bleStatusCharacteristic->notify();
-    Serial.println("[BLE] Wi-Fi connection failed. BLE remains available.");
+    statusMsg = "WIFI_FAILED:check SSID/password/2.4GHz";
+    Serial.println("[BLE] WiFi connection failed. BLE streaming continues.");
     setLED(255, 0, 0);
+  }
+
+  if (bleWifiCharacteristic) {
+    bleWifiCharacteristic->setValue(statusMsg.c_str());
+    bleWifiCharacteristic->notify();
   }
 }
 
@@ -619,14 +666,16 @@ void setup() {
   pinMode(STATUS_LED_PIN, OUTPUT);
   setLED(255, 255, 0);  // Yellow: initializing
 
-  // ── WIFI FIRST (before sensors) so connection diagnostics are visible ────────
+  // ── WIFI (try first; BLE always starts regardless) ───────────────────────────
   bool wifiOK = connectWiFi(20000);
   if (wifiOK) {
     setLED(0, 255, 0);  // Green: connected
   } else {
-    setLED(0, 0, 255);  // Blue: BLE provisioning mode
-    startBLEProvisioning();
+    setLED(0, 0, 255);  // Blue: WiFi failed, BLE only
   }
+
+  // ── BLE: Always start for live data streaming & optional provisioning ─────────
+  startBLEService();
 
   // ── I2C ──────────────────────────────────────────────────────────────────────
   Wire.begin(SDA_PIN, SCL_PIN);

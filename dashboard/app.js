@@ -425,37 +425,43 @@ function initThreeKnee() {
 }
 
 // ── UPDATE 3D MODEL FROM LIVE SENSOR VALUES ────────────────────
-function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro) {
-  const { kneePivot, capsuleMesh, ledMesh, acousticRings } = state.three;
+// pitch/roll/yaw: live IMU orientation in degrees from ESP32 MPU6050
+function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, roll = 0, yaw = 0) {
+  const { kneePivot, rootLeg, capsuleMesh, ledMesh, acousticRings } = state.three;
   if (!kneePivot) return;
 
-  // 1. Live Flexion Angle: Normal ROM 90°–130° (bent), OA 30°–80°
-  // Map angle degrees to radians for knee flexion
-  const rad = ((130 - flexAngle) * Math.PI) / 180;
+  const DEG = Math.PI / 180;
+
+  // 1. Flex angle → X rotation of the tibial pivot
+  const rad = ((130 - flexAngle) * DEG);
   kneePivot.rotation.x = Math.max(-0.2, Math.min(rad, 1.8));
 
-  // Update HUD
-  const hudAngle = document.getElementById('hud-angle');
-  if (hudAngle) hudAngle.textContent = `${Math.round(flexAngle)}°`;
+  // 2. Live IMU orientation → rotate entire leg assembly for real-time 3D tracking
+  if (rootLeg) {
+    rootLeg.rotation.x = THREE.MathUtils.lerp(rootLeg.rotation.x, pitch * DEG, 0.2);
+    rootLeg.rotation.z = THREE.MathUtils.lerp(rootLeg.rotation.z, roll  * DEG, 0.2);
+    rootLeg.rotation.y = THREE.MathUtils.lerp(rootLeg.rotation.y, yaw   * DEG, 0.2);
+  }
 
-  // 2. MLX90614 Thermal Diagnostic Heatmap
-  // Joint capsule color changes: cool cyan (healthy ~33°C) -> amber (35°C) -> inflamed red (>36°C)
+  // Update orientation HUD
+  const hudAngle = document.getElementById('hud-angle');
+  if (hudAngle) hudAngle.textContent = `${Math.round(flexAngle)}° | P:${pitch.toFixed(1)}° R:${roll.toFixed(1)}°`;
+
+  // 3. MLX90614 Thermal Diagnostic Heatmap
   if (capsuleMesh) {
-    let hexColor;
-    let label;
+    let hexColor, label;
     if (jointTemp < 34.0) {
-      hexColor = 0x22d3ee; // cool cyan
+      hexColor = 0x22d3ee;
       label = `${jointTemp.toFixed(1)}°C (Norm)`;
     } else if (jointTemp < 35.5) {
-      hexColor = 0xf59e0b; // warm amber
+      hexColor = 0xf59e0b;
       label = `${jointTemp.toFixed(1)}°C (Mild Inf)`;
     } else {
-      hexColor = 0xf43f5e; // inflamed crimson
+      hexColor = 0xf43f5e;
       label = `${jointTemp.toFixed(1)}°C (Inflamed)`;
     }
     capsuleMesh.material.color.setHex(hexColor);
     capsuleMesh.material.emissive.setHex(hexColor);
-
     const hudTemp = document.getElementById('hud-temp');
     if (hudTemp) {
       hudTemp.textContent = label;
@@ -463,36 +469,22 @@ function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro) {
     }
   }
 
-  // 3. Microphone Crepitus Acoustic Shockwave Pulse
+  // 4. Crepitus Acoustic Shockwave Pulse
   const hudCrep = document.getElementById('hud-crep');
   if (crepitusScore > 0.35) {
-    if (hudCrep) {
-      hudCrep.textContent = `Active (${crepitusScore.toFixed(2)})`;
-      hudCrep.style.color = 'var(--color-accent)';
-    }
-    // Trigger shockwave ripples
+    if (hudCrep) { hudCrep.textContent = `Active (${crepitusScore.toFixed(2)})`; hudCrep.style.color = 'var(--color-accent)'; }
     acousticRings.forEach((ring, i) => {
-      setTimeout(() => {
-        ring.material.opacity = 0.85;
-        ring.scale.set(1, 1, 1);
-      }, i * 120);
+      setTimeout(() => { ring.material.opacity = 0.85; ring.scale.set(1, 1, 1); }, i * 120);
     });
   } else {
-    if (hudCrep) {
-      hudCrep.textContent = 'Normal / Low';
-      hudCrep.style.color = 'var(--text-secondary)';
-    }
+    if (hudCrep) { hudCrep.textContent = 'Normal / Low'; hudCrep.style.color = 'var(--text-secondary)'; }
   }
 
-  // 4. LED Color based on joint state
+  // 5. LED color
   if (ledMesh) {
-    if (crepitusScore > 0.6 || jointTemp > 36.0) {
-      ledMesh.material.color.setHex(0xf43f5e); // Red OA risk
-    } else if (crepitusScore > 0.3 || jointTemp > 34.8) {
-      ledMesh.material.color.setHex(0xf59e0b); // Orange warning
-    } else {
-      ledMesh.material.color.setHex(0x10b981); // Green normal
-    }
+    if (crepitusScore > 0.6 || jointTemp > 36.0) ledMesh.material.color.setHex(0xf43f5e);
+    else if (crepitusScore > 0.3 || jointTemp > 34.8) ledMesh.material.color.setHex(0xf59e0b);
+    else ledMesh.material.color.setHex(0x10b981);
   }
 }
 
@@ -557,30 +549,43 @@ async function connectWebBluetooth() {
       optionalServices: ['12345678-1234-5678-1234-56789abcdef0']
     });
 
+    device.addEventListener('gattserverdisconnected', () => {
+      const btn = document.getElementById('btn-web-ble');
+      if (btn) { btn.classList.remove('active'); btn.innerHTML = '⬡ BLE Connect'; }
+      setDeviceStatus(false);
+      setConnStatus('error', 'BLE Disconnected');
+      console.warn('[BLE] Device disconnected.');
+    });
+
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService('12345678-1234-5678-1234-56789abcdef0');
-    const characteristic = await service.getCharacteristic('12345678-1234-5678-1234-56789abcdef1');
 
-    await characteristic.startNotifications();
-    characteristic.addEventListener('characteristicvaluechanged', (event) => {
+    // Sensor data: characteristic ..def1 (NOTIFY — live JSON telemetry every 500ms)
+    const sensorChar = await service.getCharacteristic('12345678-1234-5678-1234-56789abcdef1');
+    await sensorChar.startNotifications();
+    sensorChar.addEventListener('characteristicvaluechanged', (event) => {
       const value = new TextDecoder().decode(event.target.value);
       try {
         const parsed = JSON.parse(value);
+        if (parsed.status === 'waiting') return; // ignore init placeholder
         handleHardwarePayload(parsed);
       } catch (e) {
-        console.warn('[BLE] JSON parse error:', e);
+        console.warn('[BLE] JSON parse error:', e, value.substring(0, 80));
       }
     });
 
-    state.bleDevice = device;
+    state.bleDevice   = device;
+    state.bleServer   = server;
+    state.bleSensorChar = sensorChar;
+
     const btn = document.getElementById('btn-web-ble');
-    if (btn) {
-      btn.classList.add('active');
-      btn.innerHTML = '<span style="color:#10b981">●</span> BLE Connected';
-    }
-    setDeviceStatus(true, 'BLE 5.0 (OA_Detector)');
+    if (btn) { btn.classList.add('active'); btn.innerHTML = '<span style="color:#10b981">●</span> BLE Connected'; }
+    setDeviceStatus(true, 'BLE 5.0 — OA_Detector_SIH2026');
+    setConnStatus('connected', 'BLE Direct');
+    console.info('[BLE] Connected to OA_Detector_SIH2026. Streaming live telemetry...');
   } catch (err) {
     console.error('[BLE] Connection error:', err);
+    setConnStatus('error', 'BLE Failed');
   }
 }
 
@@ -605,7 +610,10 @@ function handleHardwarePayload(data) {
         accel_rms_y: data.accel_rms_y || 0.90,
         accel_rms_z: data.accel_rms_z || 9.82,
         gyro_range_deg: data.gyro_range_deg || 105,
-        step_symmetry: data.step_symmetry || 0.92
+        step_symmetry: data.step_symmetry || 0.92,
+        pitch: data.pitch || 0,
+        roll:  data.roll  || 0,
+        yaw:   data.yaw   || 0
       },
       flex: {
         flex_angle_deg: data.flex_angle_deg || 112,
@@ -706,12 +714,15 @@ function handleLiveData(payload) {
   // 3. Update Line Charts
   appendChartData(payload);
 
-  // 4. Update 3D Knee Model
+  // 4. Update 3D Knee Model (with live IMU orientation from MPU6050)
   const flexAngle = payload.sensors?.flex?.flex_angle_deg ?? 112;
   const jointTemp = payload.sensors?.temperature?.joint_temp_c ?? 33.2;
   const crepitus  = payload.sensors?.microphone?.crepitus_score ?? 0.05;
   const imuGyro   = payload.sensors?.imu?.gyro_range_deg ?? 105;
-  updateKnee3D(flexAngle, jointTemp, crepitus, imuGyro);
+  const pitch     = payload.sensors?.imu?.pitch ?? payload.pitch ?? 0;
+  const roll      = payload.sensors?.imu?.roll  ?? payload.roll  ?? 0;
+  const yaw       = payload.sensors?.imu?.yaw   ?? payload.yaw   ?? 0;
+  updateKnee3D(flexAngle, jointTemp, crepitus, imuGyro, pitch, roll, yaw);
 
   // 5. Update Multi-Sensor Radar
   updateRadarChart(payload);

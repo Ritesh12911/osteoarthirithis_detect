@@ -175,6 +175,9 @@ def _build_payload(row_id, data, result):
                 "accel_rms_z":    data.get("accel_rms_z", 0),
                 "gyro_range_deg": data.get("gyro_range_deg", 0),
                 "step_symmetry":  data.get("step_symmetry", 0),
+                "pitch":          data.get("pitch", 0),
+                "roll":           data.get("roll",  0),
+                "yaw":            data.get("yaw",   0),
             },
             "flex": {
                 "flex_angle_deg": data.get("flex_angle_deg", 0),
