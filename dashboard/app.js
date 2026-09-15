@@ -1651,7 +1651,11 @@ const specState = {
   simActive: false,
   simInterval: null,
   fftChart: null,
-  crepEventsCount: 0
+  crepEventsCount: 0,
+  bleActive: false,       // true when streaming from ESP32 BLE char ..def3
+  bleDevice: null,
+  bleChar: null,
+  nyquist: 22050         // overridden to 8000 in ESP32 BLE mode
 };
 
 function initSpectrogramIfNeeded() {
@@ -1723,7 +1727,9 @@ async function toggleMicSpectrogram() {
     return;
   }
 
+  // stop other sources
   if (specState.simActive) toggleSimulatedSpectrogram();
+  if (specState.bleActive) stopESP32BleSpectrogram();
 
   try {
     specState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1754,7 +1760,9 @@ function toggleSimulatedSpectrogram() {
     return;
   }
 
+  // stop other sources
   if (specState.micActive) toggleMicSpectrogram();
+  if (specState.bleActive) stopESP32BleSpectrogram();
 
   specState.simActive = true;
   document.getElementById('spec-live-dot')?.classList.add('pulse');
@@ -1783,6 +1791,7 @@ function renderWaterfallLoop() {
   if (!specState.micActive || !specState.analyser) return;
   const bufferLen = specState.analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLen);
+  specState.nyquist = specState.audioCtx.sampleRate / 2;
 
   function draw() {
     if (!specState.micActive) return;
@@ -1822,7 +1831,8 @@ function getSpectrogramColor(val) {
   return '#f43f5e';
 }
 
-function updateSpectrogramHUD(freqArray, isBurst, crepScore) {
+function updateSpectrogramHUD(freqArray, isBurst, crepScore, nyquistOverride) {
+  const nyquist = nyquistOverride || specState.nyquist || 22050;
   let maxVal = 0;
   let maxIdx = 0;
   let crepBandEnergy = 0;
@@ -1835,7 +1845,6 @@ function updateSpectrogramHUD(freqArray, isBurst, crepScore) {
     if (i >= 14 && i <= 40) crepBandEnergy += v;
   }
 
-  const nyquist = 22050;
   const domFreq = Math.round((maxIdx / freqArray.length) * nyquist);
   const crepPct = totalEnergy > 0 ? Math.round((crepBandEnergy / totalEnergy) * 100) : 0;
   const peakDb = Math.round(20 * Math.log10((maxVal || 1) / 255));
@@ -2271,6 +2280,8 @@ window.loadPatients               = loadPatients;
 window.loadCohortData             = loadCohortData;
 window.toggleMicSpectrogram       = toggleMicSpectrogram;
 window.toggleSimulatedSpectrogram = toggleSimulatedSpectrogram;
+window.toggleESP32BleSpectrogram  = toggleESP32BleSpectrogram;
+window.stopESP32BleSpectrogram    = stopESP32BleSpectrogram;
 window.switchAITab                = switchAITab;
 window.sendChat                   = sendChat;
 window.sendSuggestion             = sendSuggestion;

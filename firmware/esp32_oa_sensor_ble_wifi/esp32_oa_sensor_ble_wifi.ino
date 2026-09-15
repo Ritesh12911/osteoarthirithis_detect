@@ -81,12 +81,14 @@
 // ─── BLE DIRECT STREAMING & CONFIG ────────────────────────────────────────────
 #define BLE_DEVICE_NAME       "OA_Detector_SIH2026"
 #define BLE_SERVICE_UUID      "12345678-1234-5678-1234-56789abcdef0"
-#define BLE_SENSOR_CHAR_UUID  "12345678-1234-5678-1234-56789abcdef1"  // NOTIFY Live Telemetry to Web Server / Dashboard
-#define BLE_WIFI_CHAR_UUID    "12345678-1234-5678-1234-56789abcdef2"  // WRITE WiFi Provisioning / Control
+#define BLE_SENSOR_CHAR_UUID  "12345678-1234-5678-1234-56789abcdef1"  // NOTIFY  Live JSON telemetry
+#define BLE_WIFI_CHAR_UUID    "12345678-1234-5678-1234-56789abcdef2"  // WRITE   WiFi provisioning
+#define BLE_FFT_CHAR_UUID     "12345678-1234-5678-1234-56789abcdef3"  // NOTIFY  16-bin FFT (spectrogram)
 
-BLEServer          *bleServer              = nullptr;
-BLECharacteristic  *bleSensorCharacteristic= nullptr;
-BLECharacteristic  *bleWifiCharacteristic  = nullptr;
+BLEServer          *bleServer               = nullptr;
+BLECharacteristic  *bleSensorCharacteristic  = nullptr;
+BLECharacteristic  *bleWifiCharacteristic    = nullptr;
+BLECharacteristic  *bleFFTCharacteristic     = nullptr;  // 16-bin FFT bins for spectrogram
 volatile bool       bleConnected           = false;
 volatile bool       bleCredentialsPending  = false;
 String              blePendingSSID;
@@ -323,6 +325,38 @@ AudioFeatures readMicrophoneFeatures() {
   return feat;
 }
 
+// ─── GOERTZEL 16-BIN FFT FOR SPECTROGRAM ─────────────────────────────────────
+// Target frequencies: 20 bands covering 20Hz–8kHz (crepitus is 300–800Hz)
+// Returns 16 uint8_t magnitudes (0-255), ready to send via BLE notify.
+static const float FFT_FREQS[16] = {
+  60, 120, 200, 300, 400, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 3000, 5000, 7000
+};
+
+void computeFftBins(const int32_t* buf, int samples, uint8_t* out16) {
+  float maxMag = 1.0f;
+  float mags[16] = {};
+
+  for (int b = 0; b < 16; b++) {
+    float freq   = FFT_FREQS[b];
+    float omega  = 2.0f * (float)M_PI * freq / (float)I2S_SAMPLE_RATE;
+    float coeff  = 2.0f * cosf(omega);
+    float s0 = 0, s1 = 0, s2 = 0;
+    int   n  = min(samples, 256); // use first 256 samples for speed
+
+    for (int i = 0; i < n; i++) {
+      float x = (float)(buf[i] >> 14) / 32768.0f;
+      s0 = x + coeff * s1 - s2;
+      s2 = s1; s1 = s0;
+    }
+    mags[b] = sqrtf(s1 * s1 + s2 * s2 - coeff * s1 * s2);
+    if (mags[b] > maxMag) maxMag = mags[b];
+  }
+
+  for (int b = 0; b < 16; b++) {
+    out16[b] = (uint8_t)constrain((int)(mags[b] / maxMag * 255.0f), 0, 255);
+  }
+}
+
 // ─── IMU FEATURES ─────────────────────────────────────────────────────────────
 IMUFeatures readIMUFeatures() {
   IMUFeatures feat = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
@@ -550,6 +584,17 @@ void startBLEService() {
   bleWifiCharacteristic->setValue("Send SSID|PASSWORD to provision WiFi");
   bleWifiCharacteristic->setCallbacks(new WiFiProvisionCallbacks());
 
+  // ── Characteristic 3: FFT Spectrum (NOTIFY for live spectrogram) ─────────────
+  // 16 uint8_t Goertzel bins (60–7kHz) streamed every 100ms to the dashboard.
+  // Dashboard subscribes → real-time INMP441 acoustic spectrogram via BLE.
+  bleFFTCharacteristic = service->createCharacteristic(
+      BLE_FFT_CHAR_UUID,
+      BLECharacteristic::PROPERTY_READ |
+      BLECharacteristic::PROPERTY_NOTIFY);
+  bleFFTCharacteristic->addDescriptor(new BLE2902());
+  static uint8_t fftInit[16] = {};
+  bleFFTCharacteristic->setValue(fftInit, 16);
+
   service->start();
 
   BLEAdvertising *advertising = BLEDevice::getAdvertising();
@@ -725,6 +770,25 @@ void loop() {
 
   unsigned long now = millis();
 
+  // ── FFT spectrogram stream: 100ms cadence ─────────────────────────────────
+  // Reads I2S mic, computes 16-bin Goertzel magnitudes, notifies dashboard.
+  static unsigned long lastFftTime = 0;
+  if (bleConnected && bleFFTCharacteristic && i2sOK && (now - lastFftTime >= 100)) {
+    lastFftTime = now;
+
+    // Fresh mic read (non-blocking: use pdMS_TO_TICKS(10) timeout)
+    size_t bytesRead = 0;
+    i2s_read(I2S_PORT, i2sBuffer, sizeof(i2sBuffer), &bytesRead, pdMS_TO_TICKS(10));
+    int n = bytesRead / sizeof(int32_t);
+    if (n > 0) {
+      uint8_t fftBins[16] = {};
+      computeFftBins(i2sBuffer, n, fftBins);
+      bleFFTCharacteristic->setValue(fftBins, 16);
+      bleFFTCharacteristic->notify();
+    }
+  }
+
+  // ── Telemetry + HTTP POST: 500ms cadence ─────────────────────────────────
   if (now - lastSendTime >= SEND_INTERVAL_MS) {
     lastSendTime = now;
 
@@ -740,5 +804,5 @@ void loop() {
     sendData(audio, temp, imu, flex);
   }
 
-  delay(10);  // Yield for Wi-Fi stack
+  delay(5);  // Yield for Wi-Fi + BLE stack
 }

@@ -1154,6 +1154,29 @@ body {
   color: #fff;
 }
 
+/* ESP32 BLE hardware source button */
+.btn-hw-ble {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(167,139,250,0.18), rgba(99,102,241,0.18));
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  color: var(--color-secondary); font-weight: 600;
+  font-size: 13px; cursor: pointer; transition: all 0.25s;
+  font-family: var(--font-sans);
+}
+.btn-hw-ble:hover {
+  background: linear-gradient(135deg, rgba(167,139,250,0.32), rgba(99,102,241,0.28));
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 18px rgba(167, 139, 250, 0.35);
+  transform: translateY(-1px);
+}
+.btn-hw-ble.active {
+  background: var(--color-secondary-dim);
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 24px var(--color-secondary-glow);
+  color: #fff;
+}
+
 /* ── PATIENTS GRID & CARDS ─────────────────────────────────── */
 .patient-grid {
   display: grid;
