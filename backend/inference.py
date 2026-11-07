@@ -1,7 +1,7 @@
 """
 =============================================================
  OA Detection System — Clinical ML Inference Engine
- SIH 2026 | PS-26004 | MDoNER
+ MDoNER
 =============================================================
  Multimodal Clinical Staging grounded in:
    - Radiopaedia Kellgren-Lawrence (KL 0–4) Staging System

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OA Detect 3D — AI-Assisted Early Osteoarthritis Detection | SIH 2026</title>
-  <meta name="description" content="AI-Assisted Early Detection System for Osteoarthritis Risk Markers — SIH 2026, PS-26004, MDoNER. Real-time 3D sensor monitoring via ESP32-S3." />
+  <title>JointSense — AI-Assisted Early Osteoarthritis Detection</title>
+  <meta name="description" content="AI-Assisted Early Detection System for Osteoarthritis Risk Markers — MDoNER. Real-time 3D sensor monitoring via ESP32-S3." />
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
@@ -55,22 +55,10 @@
   <!-- ── HEADER (logo + status only) ────────────────────────────────── -->
   <header class="header">
     <a href="#" class="logo">
-      <div class="logo-icon">
-        <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
-          <circle cx="14" cy="14" r="12" stroke="url(#g1)" stroke-width="2.2"/>
-          <path d="M7 14 Q10.5 7 14 14 Q17.5 21 21 14" stroke="var(--color-primary)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-          <circle cx="14" cy="14" r="3" fill="var(--color-secondary)"/>
-          <defs>
-            <linearGradient id="g1" x1="0" y1="0" x2="28" y2="28">
-              <stop stop-color="var(--color-primary)"/>
-              <stop offset="1" stop-color="var(--color-secondary)"/>
-            </linearGradient>
-          </defs>
-        </svg>
-      </div>
+      <img src="/jointsense-logo.png" alt="JointSense Logo" style="height:44px;width:auto;object-fit:contain;border-radius:8px;" />
       <div class="logo-text">
-        <span class="logo-title">OA<span class="accent">Detect</span> <span style="font-size:13px;font-weight:600;opacity:.8">3D</span></span>
-        <span class="logo-sub">SIH 2026 · PS-26004 · MDoNER</span>
+        <span class="logo-title">Joint<span class="accent">Sense</span></span>
+        <span class="logo-sub">MDoNER · Early Knee Screening</span>
       </div>
     </a>
     <div class="header-status-bar">
@@ -172,15 +160,17 @@
       </button>
     </div>
 
-    <!-- Pin Mapping -->
+    <!-- Pin Mapping (OsteoBelt Hub PCB · XIAO ESP32-S3) -->
     <div class="sidebar-section">
       <div class="sidebar-section-label">Pin Mapping</div>
       <div class="sidebar-pins">
-        <span class="pin-chip active" id="chip-mic"  title="I2S: SCK=GPIO1, WS=GPIO2, SD=GPIO3">🎙 GPIO 1,2,3</span>
-        <span class="pin-chip active" id="chip-temp" title="I2C: SDA=GPIO8, SCL=GPIO9">🌡 GPIO 8,9</span>
-        <span class="pin-chip active" id="chip-imu"  title="I2C: SDA=GPIO8, SCL=GPIO9">📐 GPIO 8,9</span>
-        <span class="pin-chip active" id="chip-flex" title="ADC: GPIO 4">🦵 GPIO 4</span>
-        <span class="pin-chip active" id="chip-led"  title="NeoPixel Status LED">💡 GPIO 48</span>
+        <span class="pin-chip active" id="chip-mic"  title="I2S INMP441: BCLK=GPIO1, WS=GPIO2, SD=GPIO3">🎙 GPIO 1,2,3</span>
+        <span class="pin-chip active" id="chip-temp" title="DS18B20 1-Wire (4.7k pull-up): GPIO5">🌡 GPIO 5</span>
+        <span class="pin-chip active" id="chip-imu"  title="Dual MPU6050: I2C SDA=GPIO8, SCL=GPIO9 (Thigh 0x68 / Shank 0x69)">📐 GPIO 8,9</span>
+        <span class="pin-chip active" id="chip-flex" title="Flex Sensor ADC1: GPIO4">🦵 GPIO 4</span>
+        <span class="pin-chip active" id="chip-led"  title="On-board LED (active LOW): GPIO21 | AUX RGB (WS2812): GPIO6">💡 GPIO 21</span>
+        <span class="pin-chip active" id="chip-btn"  title="Push Button (to GND): GPIO44">🔘 GPIO 44</span>
+        <span class="pin-chip active" id="chip-bat"  title="Battery Sense (1:2 divider): GPIO7">🔋 GPIO 7</span>
       </div>
     </div>
 
@@ -760,9 +750,9 @@
 
   <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
   <footer class="footer">
-    <span>SIH 2026 · Problem Statement 26004 · MDoNER</span>
+    <span>MDoNER · North Eastern Region</span>
     <span class="divider-v"></span>
-    <span>AI-Assisted Early Osteoarthritis Detection System · North Eastern Region</span>
+    <span>JointSense · AI-Assisted Early Osteoarthritis Detection · North Eastern Region</span>
     <span class="divider-v"></span>
     <span id="footer-time">—</span>
   </footer>

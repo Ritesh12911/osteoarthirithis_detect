@@ -1,7 +1,7 @@
 {
-  "name": "OA Detect 3D — AI Osteoarthritis Screening",
-  "short_name": "OADetect",
-  "description": "AI-assisted early osteoarthritis detection system for knee health screening. SIH 2026 · MDoNER.",
+  "name": "JointSense — AI Osteoarthritis Screening",
+  "short_name": "JointSense",
+  "description": "AI-assisted early osteoarthritis detection system for knee health screening. MDoNER.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

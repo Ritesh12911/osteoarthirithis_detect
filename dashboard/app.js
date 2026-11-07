@@ -1,6 +1,6 @@
 /* ============================================================
    OA Detection System — Next-Gen 3D & Glassmorphic Dashboard
-   SIH 2026 | PS-26004 | MDoNER
+   MDoNER
    Features:
    - Three.js Interactive 3D Biomechanical Knee Model
    - Web Serial & Web Bluetooth Direct Hardware Connectors

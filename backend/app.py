@@ -1,7 +1,7 @@
 """
 =============================================================
  OA Detection System — Flask Backend Server
- SIH 2026 | Problem Statement 26004 | MDoNER
+ MDoNER
 =============================================================
 
  Core Endpoints:
@@ -737,7 +737,7 @@ def on_subscribe(data):
 if __name__ == "__main__":
     print("=" * 60)
     print("  OA Detection System — Backend Server v2.0")
-    print("  SIH 2026 | PS-26004 | MDoNER")
+    print("  MDoNER")
     print("=" * 60)
 
     db.init_db()

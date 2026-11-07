@@ -1,7 +1,7 @@
 """
 =============================================================
  OA Detection System — LLM Clinical Insights Service
- SIH 2026 | Problem Statement 26004 | MDoNER
+ MDoNER
 =============================================================
  Provides:
    - chat()                  → Gemini-powered clinical Q&A
@@ -41,7 +41,7 @@ def _get_model():
 
 
 _SYSTEM_PROMPT = """You are an expert AI clinical assistant specialised in knee Osteoarthritis (OA) 
-analysis for an IoT-based early detection system (SIH 2026, MDoNER, North Eastern India). 
+analysis for an IoT-based early detection system (MDoNER, North Eastern India). 
 You interpret real-time sensor data from an ESP32-S3 wearable device equipped with:
 - INMP441 microphone (crepitus/joint sounds)
 - MLX90614 IR temperature sensor

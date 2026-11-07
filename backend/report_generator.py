@@ -1,7 +1,7 @@
 """
 =============================================================
  OA Detection System — PDF Clinical Report Generator
- SIH 2026 | Problem Statement 26004 | MDoNER
+ MDoNER
 =============================================================
  Generates multi-page clinical PDF reports using ReportLab.
  Falls back to minimal text report if ReportLab unavailable.
@@ -92,7 +92,7 @@ def generate_report(patient_id: str, patient: dict, readings: list,
         rightMargin=20*mm, leftMargin=20*mm,
         topMargin=15*mm, bottomMargin=15*mm,
         title=f"OA Clinical Report — {patient.get('name', patient_id)}",
-        author="OA Detection System · SIH 2026",
+        author="OA Detection System �",
     )
 
     styles = getSampleStyleSheet()
@@ -138,7 +138,7 @@ def _build_header(styles, patient_id, patient):
         ),
         Paragraph(
             '<font color="#94a3b8">Clinical Screening Report</font><br/>'
-            '<font color="#64748b" size="9">SIH 2026 · PS-26004 · MDoNER · North Eastern Region</font>',
+            '<font color="#64748b" size="9"> ·  · MDoNER · North Eastern Region</font>',
             ParagraphStyle('hdr2', fontName='Helvetica', fontSize=10, textColor=white, alignment=TA_RIGHT)
         )
     ]]
@@ -542,7 +542,7 @@ def _build_disclaimer(styles):
     ))
     elements.append(Spacer(1, 2*mm))
     elements.append(Paragraph(
-        f'OA Detection System · SIH 2026 · PS-26004 · MDoNER · Report generated {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC',
+        f'OA Detection System � ·  · MDoNER · Report generated {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC',
         ParagraphStyle('footer', fontName='Helvetica', fontSize=7, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
     ))
     return elements

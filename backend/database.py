@@ -1,7 +1,7 @@
 """
 =============================================================
  OA Detection System — SQLite Database Module
- SIH 2026 | Problem Statement 26004 | MDoNER
+ MDoNER
 =============================================================
  Tables:
    sessions          ← sensor readings + ML inference results

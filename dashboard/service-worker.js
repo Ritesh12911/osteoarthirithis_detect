@@ -1,6 +1,6 @@
 /* ============================================================
    OA Detection System — Service Worker (PWA)
-   SIH 2026 | PS-26004 | MDoNER
+   MDoNER
    - Cache-first for static assets
    - Network-first for API calls
    - Offline fallback with cached readings
