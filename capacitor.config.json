@@ -1,0 +1,27 @@
+{
+  "appId": "com.jointsense.oa",
+  "appName": "JointSense",
+  "webDir": "dashboard",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "buildOptions": {
+      "keystorePath": null,
+      "keystoreAlias": null
+    },
+    "backgroundColor": "#030712",
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#030712",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    }
+  }
+}
+

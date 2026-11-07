@@ -747,7 +747,8 @@ if __name__ == "__main__":
     if not llm_info['gemini_available']:
         print("[LLM] Set GEMINI_API_KEY env var to enable Gemini AI features")
 
-    host, port = "0.0.0.0", 5000
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", 5000))
     print(f"\n[SRV] Starting on http://{host}:{port}")
     print(f"[SRV] Dashboard:  http://localhost:{port}")
     print(f"[SRV] API stats:  http://localhost:{port}/api/stats")

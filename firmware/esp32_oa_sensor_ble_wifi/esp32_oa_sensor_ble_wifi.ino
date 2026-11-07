@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  *  OsteoBelt - AI-assisted early osteoarthritis (OA) screening knee brace
- *  Seeed XIAO ESP32-S3 firmware v3.0        SIH 2026 | PS 26004 (MDoNER)
+ *  Seeed XIAO ESP32-S3 firmware v3.0        MDoNER
  * ============================================================================
  *  Rewritten from OA_Detector_XIAO_ESP32S3.ino v2.1. Main fixes:
  *   - Audio: correct 24-bit scaling, DC removal, continuous capture task,
@@ -102,7 +102,7 @@ struct AudioOut { float rms, dbfs, domHz, bandE; uint16_t events5s; uint8_t bins
 #define DEFAULT_SERVER_URL ""          // e.g. "http://192.168.1.50:5000/api/data"
 
 // ------------------------------- BLE ----------------------------------------
-#define BLE_DEVICE_NAME       "OA_Detector_SIH2026"
+#define BLE_DEVICE_NAME       "JointSense_OsteoBelt"
 #define BLE_SERVICE_UUID      "12345678-1234-5678-1234-56789abcdef0"
 #define BLE_SENSOR_CHAR_UUID  "12345678-1234-5678-1234-56789abcdef1"  // NOTIFY JSON telemetry
 #define BLE_WIFI_CHAR_UUID    "12345678-1234-5678-1234-56789abcdef2"  // WRITE  SSID|PASSWORD

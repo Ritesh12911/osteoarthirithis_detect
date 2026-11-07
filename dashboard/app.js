@@ -2380,12 +2380,54 @@ async function generateReport() {
 }
 
 // ── 7. PWA & OFFLINE DETECTION ─────────────────────────────────
+let deferredInstallPrompt = null;
+
 function initPWA() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js')
       .then(reg => console.log('[PWA] ServiceWorker registered with scope:', reg.scope))
       .catch(err => console.log('[PWA] ServiceWorker registration notice:', err));
   }
+
+  const installBtn = document.getElementById('pwa-install-btn');
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+  if (isStandalone && installBtn) {
+    installBtn.style.display = 'none';
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (installBtn && !isStandalone) {
+      installBtn.style.display = 'inline-flex';
+    }
+  });
+
+  if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          installBtn.style.display = 'none';
+        }
+        deferredInstallPrompt = null;
+      } else {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+          alert("📱 Install JointSense on iPhone / iPad:\n\n1. Tap the Share button (square with arrow ↑) in Safari\n2. Scroll down and tap 'Add to Home Screen'\n3. Tap 'Add' in the top-right corner!");
+        } else {
+          alert("📱 Install JointSense App:\n\n1. Tap the browser menu (⋮) in Chrome\n2. Tap 'Install app' or 'Add to Home screen'\n3. JointSense will launch as a standalone phone app!");
+        }
+      }
+    });
+  }
+
+  window.addEventListener('appinstalled', () => {
+    if (installBtn) installBtn.style.display = 'none';
+    console.log('[PWA] JointSense installed as application');
+  });
 
   const updateOnlineStatus = () => {
     const banner = document.getElementById('offline-banner');
