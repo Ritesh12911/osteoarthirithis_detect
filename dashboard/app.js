@@ -788,6 +788,88 @@ function updateKPICards(p) {
   setText('kv-count', state.sessionCount);
   setText('kd-normal-oa', `Normal: ${state.normalCount} | OA: ${state.oaCount}`);
   setBar('kb-count', Math.min(100, (state.sessionCount / 50) * 100));
+
+  // Update Senior Friendly Patient Card
+  updateSeniorCard(p);
+}
+
+function updateSeniorCard(p) {
+  const s = p.sensors || {};
+  const mic  = s.microphone  || {};
+  const temp = s.temperature || {};
+  const flex = s.flex        || {};
+  const imu  = s.imu         || {};
+  const inf  = p.inference   || {};
+
+  const jt = temp.joint_temp_c ?? 33.5;
+  const cr = mic.crepitus_score ?? 0;
+  const rom = flex.flex_angle_deg ?? 110;
+  const sym = imu.step_symmetry ?? 0.92;
+  const risk = inf.risk_score !== undefined ? inf.risk_score : 0.15;
+
+  // 1. Vitals
+  setText('senior-vital-bend', `${Math.round(rom)}°`);
+  const bendTag = document.getElementById('senior-vital-bend-tag');
+  if (bendTag) {
+    if (rom >= 90) { bendTag.textContent = 'Good Range'; bendTag.className = 'senior-vital-tag good'; }
+    else if (rom >= 70) { bendTag.textContent = 'Mild Stiffness'; bendTag.className = 'senior-vital-tag warn'; }
+    else { bendTag.textContent = 'Restricted'; bendTag.className = 'senior-vital-tag alert'; }
+  }
+
+  setText('senior-vital-balance', `${Math.round(sym * 100)}%`);
+  const balTag = document.getElementById('senior-vital-bal-tag');
+  if (balTag) {
+    if (sym >= 0.85) { balTag.textContent = 'Steady Gait'; balTag.className = 'senior-vital-tag good'; }
+    else if (sym >= 0.70) { balTag.textContent = 'Slight Limp'; balTag.className = 'senior-vital-tag warn'; }
+    else { balTag.textContent = 'Uneven Walking'; balTag.className = 'senior-vital-tag alert'; }
+  }
+
+  setText('senior-vital-temp', `${jt.toFixed(1)}°C`);
+  const tempTag = document.getElementById('senior-vital-temp-tag');
+  if (tempTag) {
+    if (jt <= 35.5) { tempTag.textContent = 'Normal Warmth'; tempTag.className = 'senior-vital-tag good'; }
+    else if (jt <= 36.8) { tempTag.textContent = 'Mild Inflammation'; tempTag.className = 'senior-vital-tag warn'; }
+    else { tempTag.textContent = 'Inflamed Joint'; tempTag.className = 'senior-vital-tag alert'; }
+  }
+
+  const soundEl = document.getElementById('senior-vital-sound');
+  const soundTag = document.getElementById('senior-vital-sound-tag');
+  if (soundEl && soundTag) {
+    if (cr < 0.25) {
+      soundEl.textContent = 'Quiet';
+      soundTag.textContent = 'Smooth Joint';
+      soundTag.className = 'senior-vital-tag good';
+    } else if (cr < 0.60) {
+      soundEl.textContent = 'Clicking';
+      soundTag.textContent = 'Mild Crepitus';
+      soundTag.className = 'senior-vital-tag warn';
+    } else {
+      soundEl.textContent = 'Crackling';
+      soundTag.textContent = 'Crepitus Detected';
+      soundTag.className = 'senior-vital-tag alert';
+    }
+  }
+
+  // 2. Status Pill & Plain English Summary
+  const pill = document.getElementById('senior-status-pill');
+  const pillText = document.getElementById('senior-status-text');
+  const summary = document.getElementById('senior-plain-summary');
+
+  if (pill && pillText && summary) {
+    if (risk < 0.35) {
+      pill.className = 'senior-status-pill';
+      pillText.textContent = `Low Risk (${Math.round(risk * 100)}%) — Good Condition`;
+      summary.innerHTML = `✅ <strong>Your knee joint is functioning well.</strong> Walking smoothness is steady (${Math.round(sym*100)}%), temperature is normal (${jt.toFixed(1)}°C), and knee bend is natural. Continue gentle daily walking to keep joints healthy!`;
+    } else if (risk < 0.65) {
+      pill.className = 'senior-status-pill moderate';
+      pillText.textContent = `Mild Concern (${Math.round(risk * 100)}%) — Early Signs`;
+      summary.innerHTML = `⚠️ <strong>Mild knee stiffness or crepitus detected.</strong> Your knee flexibility is slightly reduced (${Math.round(rom)}°). We recommend low-impact leg conditioning and checking your personalized diet & exercises below.`;
+    } else {
+      pill.className = 'senior-status-pill attention';
+      pillText.textContent = `Attention Advised (${Math.round(risk * 100)}%) — Joint Strain`;
+      summary.innerHTML = `🚨 <strong>Knee joint strain detected.</strong> Joint warmth (${jt.toFixed(1)}°C) and gait asymmetry suggest active knee inflammation. Please download your Doctor Report (PDF) below and consult your orthopedic specialist.`;
+    }
+  }
 }
 
 // ── SENSOR TILES ───────────────────────────────────────────────
@@ -1318,6 +1400,9 @@ function switchTab(tabId) {
   document.querySelectorAll('.sidebar-nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.id === `tab-btn-${tabId}`);
   });
+  document.querySelectorAll('.mob-nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.id === `mob-btn-${tabId}`);
+  });
   document.querySelectorAll('.tab-content').forEach(panel => {
     panel.classList.toggle('active', panel.id === `tab-${tabId}`);
   });
@@ -1509,6 +1594,11 @@ function onPatientChange(patientId) {
     state.socket.emit('subscribe', { patient_id: patientId });
   }
   clearLog();
+  const sel = document.getElementById('patient-select');
+  const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+  const name = opt ? opt.text : patientId;
+  const disp = document.getElementById('senior-patient-display-name');
+  if (disp) disp.textContent = name;
   console.log(`[PATIENT] Switched active patient to: ${patientId}`);
 }
 

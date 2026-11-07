@@ -186,6 +186,66 @@
        ═══════════════════════════════════════════════════════════════════ -->
   <main class="main tab-content active" id="tab-monitor">
 
+    <!-- ── SENIOR CITIZEN EASY VIEW SUMMARY (50+ PATIENT CARD) ────────── -->
+    <section class="senior-patient-card glass-card" id="senior-health-card">
+      <div class="senior-card-header">
+        <div class="senior-avatar-wrap">
+          <div class="senior-avatar" id="senior-avatar-icon">🧓</div>
+          <div>
+            <div class="senior-welcome-label">Knee Health Overview</div>
+            <h2 class="senior-patient-name" id="senior-patient-display-name">Anita Sharma (Age 58)</h2>
+          </div>
+        </div>
+        <div class="senior-status-pill" id="senior-status-pill">
+          <span class="senior-dot" id="senior-status-dot"></span>
+          <span id="senior-status-text">Good Joint Health</span>
+        </div>
+      </div>
+
+      <div class="senior-plain-summary" id="senior-plain-summary">
+        Your knee movement is smooth and joint temperature is healthy. No significant knee joint degradation detected.
+      </div>
+
+      <div class="senior-vitals-grid">
+        <div class="senior-vital-box">
+          <span class="senior-vital-icon">🦵</span>
+          <span class="senior-vital-name">Knee Flexibility</span>
+          <span class="senior-vital-val" id="senior-vital-bend">115°</span>
+          <span class="senior-vital-tag good" id="senior-vital-bend-tag">Good Range</span>
+        </div>
+        <div class="senior-vital-box">
+          <span class="senior-vital-icon">🚶</span>
+          <span class="senior-vital-name">Walking Balance</span>
+          <span class="senior-vital-val" id="senior-vital-balance">94%</span>
+          <span class="senior-vital-tag good" id="senior-vital-bal-tag">Steady Gait</span>
+        </div>
+        <div class="senior-vital-box">
+          <span class="senior-vital-icon">🌡️</span>
+          <span class="senior-vital-name">Joint Warmth</span>
+          <span class="senior-vital-val" id="senior-vital-temp">33.5°C</span>
+          <span class="senior-vital-tag good" id="senior-vital-temp-tag">Normal Temp</span>
+        </div>
+        <div class="senior-vital-box">
+          <span class="senior-vital-icon">🔊</span>
+          <span class="senior-vital-name">Joint Sound</span>
+          <span class="senior-vital-val" id="senior-vital-sound">Clear</span>
+          <span class="senior-vital-tag good" id="senior-vital-sound-tag">No Crepitus</span>
+        </div>
+      </div>
+
+      <div class="senior-quick-actions">
+        <button class="senior-action-btn primary" onclick="generateReport()">
+          <span>📄</span> Download Doctor Report (PDF)
+        </button>
+        <button class="senior-action-btn secondary" onclick="switchTab('ai')">
+          <span>🏃</span> View Knee Exercises
+        </button>
+        <button class="senior-action-btn accent" onclick="toggleDemo()">
+          <span id="senior-demo-icon">▶</span> <span id="senior-demo-text">Simulate Live Test</span>
+        </button>
+      </div>
+    </section>
+
     <!-- ── KPI CARDS ──────────────────────────────────────────────────── -->
     <section class="kpi-row">
       <div class="glass-card risk-card" id="risk-card">
@@ -760,6 +820,30 @@
     <span class="divider-v"></span>
     <span id="footer-time">—</span>
   </footer>
+
+  <!-- ── MOBILE BOTTOM NAVIGATION (Senior & Phone Friendly) ─────────────── -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mob-nav-btn active" id="mob-btn-monitor" onclick="switchTab('monitor')">
+      <span class="mob-nav-icon">🩺</span>
+      <span class="mob-nav-label">Knee Health</span>
+    </button>
+    <button class="mob-nav-btn" id="mob-btn-patients" onclick="switchTab('patients')">
+      <span class="mob-nav-icon">👥</span>
+      <span class="mob-nav-label">Patients</span>
+    </button>
+    <button class="mob-nav-btn" id="mob-btn-cohort" onclick="switchTab('cohort')">
+      <span class="mob-nav-icon">📊</span>
+      <span class="mob-nav-label">Analytics</span>
+    </button>
+    <button class="mob-nav-btn" id="mob-btn-ai" onclick="switchTab('ai')">
+      <span class="mob-nav-icon">🏃</span>
+      <span class="mob-nav-label">Exercises</span>
+    </button>
+    <button class="mob-nav-btn" id="mob-btn-report" onclick="generateReport()">
+      <span class="mob-nav-icon">📄</span>
+      <span class="mob-nav-label">PDF Report</span>
+    </button>
+  </nav>
 
   <script src="app.js"></script>
 </body>
