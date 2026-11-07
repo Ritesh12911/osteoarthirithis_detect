@@ -20,25 +20,13 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Sync Capacitor Android
-        run: npx cap sync android
-
       - name: Make Gradle executable
         run: chmod +x android/gradlew
 
       - name: Build Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

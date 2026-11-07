@@ -1,18 +1,27 @@
-# 🦴 AI-Assisted Early Osteoarthritis Detection System
-### SIH 2026 · Problem Statement 26004 · MDoNER
+# 🦴 JointSense — AI-Assisted Early Osteoarthritis Detection System
 
-> AI-powered, ESP32-S3 based real-time knee health screening system for the North Eastern Region of India.
+> AI-powered, ESP32-S3 based real-time knee health screening system with multimodal sensor fusion and machine learning inference.
+
+[![Live Website](https://img.shields.io/badge/Render-Live%20Website-brightgreen?style=for-the-badge&logo=render)](https://jointsense-jmkt.onrender.com)
+[![GitHub Actions](https://img.shields.io/badge/Android%20App-Build%20Status-blue?style=for-the-badge&logo=android)](https://github.com/Ritesh12911/osteoarthirithis_detect/actions)
+
+### 🌐 Live Production Website & PWA
+**[https://jointsense-jmkt.onrender.com](https://jointsense-jmkt.onrender.com)**
+
+* **Web Application**: Live sensor telemetry, risk assessment gauge, radar comparison, patient cohort analytics, and AI clinical report generation.
+* **Mobile App (PWA)**: Open the link above in Chrome (Android) or Safari (iOS) and tap **"Install App"** to install JointSense natively on your phone.
+* **Android APK**: Native Android build powered by Capacitor in `/android`.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ System Architecture
 
 ```
-ESP32-S3 N16R8  ──(WiFi/BLE)──▶  Flask Backend  ──(WebSocket)──▶  Web Dashboard
-  INMP441 Mic                       ML Inference                   Live Charts
-  MLX90614 IR Temp                  SQLite DB                      Risk Gauge
-  MPU6050 IMU                       REST API                       Comparison Panel
-  Flex Sensor ADC                                                   Session Log
+ESP32-S3 (OsteoBelt Hub) ──(WiFi/BLE)──▶  Render Cloud / Flask  ──(WebSocket)──▶  JointSense Dashboard
+  INMP441 Microphone (Crepitus)              ML Inference (KL 0-4)                  Live 3D & Charts
+  DS18B20 (Skin Temperature)                SQLite DB                              Risk Gauge
+  Dual MPU6050 IMU (Thigh + Shank)          REST API                               Cohort Analytics
+  Flex Sensor ADC (Stiffness)               ReportLab PDF                          Mobile App (PWA / APK)
 ```
 
 ---
@@ -20,139 +29,74 @@ ESP32-S3 N16R8  ──(WiFi/BLE)──▶  Flask Backend  ──(WebSocket)─�
 ## 📁 Project Structure
 
 ```
-oa-detection-system/
-├── firmware/
-│   └── esp32_oa_sensor.ino     ← ESP32-S3 Arduino sketch
-├── ml/
-│   ├── generate_dataset.py     ← Synthetic Normal + OA data generator
-│   ├── train_model.py          ← Ensemble ML training pipeline
-│   ├── models/                 ← oa_model.pkl, scaler.pkl (after training)
-│   └── plots/                  ← Confusion matrix, ROC, feature importance
+osteoarthirithis_detect/
+├── android/                    ← Native Android application (Capacitor)
 ├── backend/
-│   ├── app.py                  ← Flask + Socket.IO server
-│   ├── inference.py            ← ML inference engine
-│   ├── database.py             ← SQLite session storage
-│   └── requirements.txt
-└── dashboard/
-    ├── index.html              ← Main dashboard
-    ├── style.css               ← Glassmorphism dark theme
-    └── app.js                  ← Real-time charts + WebSocket client
+│   ├── app.py                  ← Flask + Socket.IO production server
+│   ├── database.py             ← SQLite database & session storage
+│   ├── inference.py            ← ML model inference engine (KL grading)
+│   ├── llm_service.py          ← AI clinical advisory service
+│   ├── report_generator.py     ← PDF clinical report generator
+│   └── requirements.txt        ← Backend dependencies
+├── dashboard/
+│   ├── index.html              ← Responsive medical dashboard
+│   ├── app.js                  ← Real-time telemetry, charts & WebSockets
+│   ├── style.css               ← Dark glassmorphism interface
+│   ├── jointsense-logo.png     ← Brand logo
+│   └── manifest.json           ← PWA configuration
+├── firmware/
+│   └── esp32_oa_sensor_ble_wifi/
+│       └── esp32_oa_sensor_ble_wifi.ino  ← OsteoBelt v3.0 firmware
+├── ml/
+│   ├── generate_dataset.py     ← Synthetic dataset generator
+│   ├── train_model.py          ← Model training pipeline
+│   └── models/                 ← Pre-trained models (KL & binary)
+└── Procfile / railway.json     ← Cloud deployment configuration
 ```
 
 ---
 
-## 🔌 Hardware Wiring (ESP32-S3 N16R8)
+## 🔌 Hardware Pin Mapping (OsteoBelt Hub PCB · XIAO ESP32-S3)
 
-| Sensor | Model | Interface | Pins |
-|--------|-------|-----------|------|
-| Microphone | INMP441 | I2S | SCK=GPIO1, WS=GPIO2, SD=GPIO3 |
-| IR Temperature | MLX90614 | I2C | SDA=GPIO8, SCL=GPIO9 |
-| IMU (6-axis) | MPU6050 | I2C | SDA=GPIO8, SCL=GPIO9 (shared) |
-| Flex Sensor | Resistive | ADC | GPIO4 (10kΩ pull-down) |
-| Status LED | NeoPixel/RGB | GPIO | GPIO48 |
+| Sensor / Component | Module | Interface | Pins |
+|--------------------|--------|-----------|------|
+| Acoustic Crepitus | INMP441 Mic | I2S | BCLK=GPIO1, WS=GPIO2, SD=GPIO3 |
+| Knee Joint Temperature | DS18B20 | 1-Wire | GPIO5 (4.7kΩ pull-up) |
+| Motion & Knee Angle | Dual MPU6050 | I2C | SDA=GPIO8, SCL=GPIO9 (Thigh `0x68`, Shank `0x69`) |
+| Joint Flexion / Stiffness | Flex Sensor | ADC1 | GPIO4 (10kΩ divider) |
+| Status / Risk Indicator | On-board LED / AUX | GPIO | GPIO21 (active LOW) / GPIO6 (WS2812) |
+| Calibrate / Zero Button | Push Button | GPIO | GPIO44 (to GND) |
+| Battery Monitoring | Resistor Divider | ADC1 | GPIO7 (1:2 divider) |
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Local Development)
 
-### 1. Install Python dependencies
+### 1. Install Dependencies
 ```bash
-cd backend
 pip install -r requirements.txt
 ```
 
-### 2. Train the ML model
+### 2. Run Backend & Dashboard
 ```bash
-cd ml
-python generate_dataset.py   # Creates oa_dataset.csv
-python train_model.py        # Trains & saves model, generates plots
+python backend/app.py
+# Server runs at http://localhost:5000
 ```
 
-### 3. Start the backend server
-```bash
-cd backend
-python app.py
-# Server starts at http://localhost:5000
-```
-
-### 4. Open the dashboard
-Open browser → `http://localhost:5000`
-
-Or open `dashboard/index.html` directly (auto-starts local simulation if backend unavailable)
-
-### 5. Flash ESP32-S3 firmware
-- Install [Arduino IDE](https://www.arduino.cc/en/software) with ESP32-S3 board package
-- Install libraries: `Adafruit MLX90614`, `Adafruit MPU6050`, `ArduinoJson`, `NimBLE-Arduino`
-- Edit `firmware/esp32_oa_sensor.ino`:
-  ```cpp
-  const char* WIFI_SSID  = "YOUR_WIFI_SSID";
-  const char* WIFI_PASS  = "YOUR_WIFI_PASSWORD";
-  const char* SERVER_URL = "http://YOUR_PC_IP:5000/api/data";
-  ```
-- Flash to ESP32-S3 N16R8
+### 3. Flash ESP32-S3 Firmware
+Open `firmware/esp32_oa_sensor_ble_wifi/esp32_oa_sensor_ble_wifi.ino` in Arduino IDE:
+* Board: `XIAO_ESP32S3`
+* Cloud Server URL: `https://jointsense-jmkt.onrender.com/api/data`
 
 ---
 
-## 🧠 ML Features (12 sensor features)
-
-| Feature | Sensor | Clinical Significance |
-|---------|--------|----------------------|
-| `audio_rms` | INMP441 Mic | Crepitus (joint crackling) amplitude |
-| `dominant_freq_hz` | INMP441 Mic | Frequency of joint sounds |
-| `crepitus_score` | INMP441 Mic | Abnormal sound energy (>300Hz) |
-| `joint_temp_c` | MLX90614 | Synovial inflammation (↑ in OA) |
-| `temp_asymmetry` | MLX90614 | L-R knee temperature difference |
-| `accel_rms_x/y/z` | MPU6050 | Gait irregularity (antalgic gait) |
-| `gyro_range_deg` | MPU6050 | Range of motion (↓ in OA) |
-| `step_symmetry` | MPU6050 | Left-right gait balance |
-| `flex_angle_deg` | Flex Sensor | Knee bend angle (↓ in OA) |
-| `flex_stiffness` | Flex Sensor | Resistance to bending (↑ in OA) |
-
----
-
-## 📊 Dashboard Features
-
-- **Risk Gauge** — 0–100% OA risk score with animated needle
-- **Live Charts** — Real-time line charts for all 4 sensors (rolling 40-point window)
-- **Radar Chart** — Multi-axis comparison: Current vs Normal vs OA reference
-- **Comparison Bars** — Side-by-side feature comparison vs reference profiles
-- **Session Log** — Timestamped history of readings with risk classification
-- **Sensor Cards** — Live hardware status for each sensor
-- **Demo Mode** — Auto-simulates both Normal and OA patients (no hardware needed)
-- **Alert System** — Real-time high-risk alerts
-
----
-
-## 📡 API Endpoints
+## 📡 Cloud API Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/data` | ESP32 sends sensor readings |
-| GET | `/api/history` | Session history |
-| GET | `/api/reference` | Normal + OA reference profiles |
-| GET | `/api/stats` | Summary statistics |
-| GET | `/api/timeseries?patient_id=X` | Patient time series |
-| GET | `/api/compare?patient_id=X` | Comparison data |
-| GET | `/api/model_info` | ML model metadata |
-| POST | `/api/demo/start` | Start demo simulation |
-| POST | `/api/demo/stop` | Stop demo simulation |
-
----
-
-## 🎯 Expected Model Performance
-
-| Model | Accuracy | F1 Score | AUC |
-|-------|----------|----------|-----|
-| Random Forest | ~92% | ~0.92 | ~0.97 |
-| Gradient Boosting | ~91% | ~0.91 | ~0.96 |
-| SVM (RBF) | ~88% | ~0.88 | ~0.94 |
-| **Ensemble (Voting)** | **~93%** | **~0.93** | **~0.97** |
-
----
-
-## ⚠️ Important Notes
-
-1. **Real Patient Data**: The ML model uses synthetic data. Replace with actual clinical data from hospital partners for deployment.
-2. **Medical Disclaimer**: This is a screening aid, not a diagnostic tool. Consult an orthopedic specialist for diagnosis.
-3. **BLE Mode**: Uncomment `#define USE_BLE` in firmware to use BLE instead of WiFi.
-4. **IP Address**: Update `SERVER_URL` in firmware to your PC's local IP (run `ipconfig` to find it).
+|---|---|---|
+| `POST` | `/api/data` | ESP32 telemetry ingestion |
+| `GET` | `/api/stats` | Live detection counts & risk metrics |
+| `GET` | `/api/patients` | Patient profiles & KL staging |
+| `GET` | `/api/cohort` | Multi-patient clinical statistics |
+| `POST` | `/api/report/generate` | Generate clinical PDF report |
+| `POST` | `/api/demo/start` | Start live sensor stream simulation |

@@ -3,9 +3,13 @@
   "appName": "JointSense",
   "webDir": "dashboard",
   "server": {
+    "url": "https://jointsense-jmkt.onrender.com",
     "androidScheme": "https",
     "cleartext": true,
-    "allowNavigation": ["*"]
+    "allowNavigation": [
+      "jointsense-jmkt.onrender.com",
+      "*.onrender.com"
+    ]
   },
   "android": {
     "buildOptions": {
@@ -24,4 +28,3 @@
     }
   }
 }
-

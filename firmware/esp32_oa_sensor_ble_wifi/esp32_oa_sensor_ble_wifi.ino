@@ -99,7 +99,7 @@ struct AudioOut { float rms, dbfs, domHz, bandE; uint16_t events5s; uint8_t bins
 #define MAX_CAL          16
 #define AC_BINS          13            // auto-cal: 10 deg bins, 0..130
 #define AC_DURATION_MS   20000
-#define DEFAULT_SERVER_URL ""          // e.g. "http://192.168.1.50:5000/api/data"
+#define DEFAULT_SERVER_URL "https://jointsense-jmkt.onrender.com/api/data"          // e.g. "http://192.168.1.50:5000/api/data"
 
 // ------------------------------- BLE ----------------------------------------
 #define BLE_DEVICE_NAME       "JointSense_OsteoBelt"
