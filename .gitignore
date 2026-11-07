@@ -30,7 +30,6 @@ backend/reports/*.pdf
 
 # Node / Capacitor
 node_modules/
-package-lock.json
 
 # Android build artifacts
 android/.gradle/
