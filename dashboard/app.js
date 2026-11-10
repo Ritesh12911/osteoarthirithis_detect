@@ -500,6 +500,54 @@ function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, r
   }
 }
 
+// ── SERIAL & BLE DATA PARSERS ──────────────────────────────────
+function parseDataLine(line) {
+  // Parses firmware serial format:
+  // e.g.: "[DATA] knee 160.0 | flex 160.0 | ROM 0 | cad 225 | crep 0.50 | T 24.9C | 3.92V | mic -58dB"
+  const getNum = (regex) => {
+    const m = line.match(regex);
+    return m ? parseFloat(m[1]) : null;
+  };
+
+  const knee = getNum(/knee\s+([-\d.]+)/i);
+  const flex = getNum(/flex\s+([-\d.]+)/i);
+  const rom  = getNum(/ROM\s+([-\d.]+)/i);
+  const cad  = getNum(/cad\s+([-\d.]+)/i);
+  const crep = getNum(/crep\s+([-\d.]+)/i);
+  const temp = getNum(/T\s+([-\d.]+)\s*C/i);
+  const vbat = getNum(/([-\d.]+)\s*V/i);
+  const mic  = getNum(/mic\s+([-\d.]+)\s*dB/i);
+
+  if (knee !== null || flex !== null || temp !== null) {
+    const tempValid = temp !== null && temp > 10.0 && temp < 50.0;
+    const v = vbat ?? 3.9;
+    const pct = Math.min(100, Math.max(0, Math.round((v - 3.3) / 0.9 * 100)));
+
+    return {
+      patient_id: getSelectedPatient(),
+      knee_angle_deg: knee ?? 0,
+      flex_angle_deg: flex ?? knee ?? 0,
+      rom_deg: rom ?? 0,
+      gyro_range_deg: rom ?? 0,
+      cadence_spm: cad ?? 0,
+      crepitus_score: crep ?? 0,
+      joint_temp_c: temp,
+      ambient_temp_c: 28.0,
+      temp_valid: tempValid ? 1 : 0,
+      temp_asymmetry: tempValid ? Math.abs(temp - 33.0) : 0,
+      battery_v: v,
+      battery_pct: pct,
+      audio_dbfs: mic ?? -60,
+      audio_rms: mic ? Math.pow(10, mic / 20) : 0.002,
+      dominant_freq_hz: 180,
+      imu_pair_ok: 1,
+      flex_calibrated: line.includes('(uncal)') ? 0 : 1,
+      fw: '3.0'
+    };
+  }
+  return null;
+}
+
 // ── REAL HARDWARE CONNECTORS (WEB SERIAL & WEB BLUETOOTH) ───────
 async function connectWebSerial() {
   if (!('serial' in navigator)) {
@@ -513,6 +561,16 @@ async function connectWebSerial() {
     state.serialPort = port;
     state.hwConnected = true;
 
+    // Send "json on" command to firmware to enable continuous JSON streaming
+    try {
+      const encoder = new TextEncoder();
+      const writer = port.writable.getWriter();
+      await writer.write(encoder.encode("json on\r\n"));
+      writer.releaseLock();
+    } catch (e) {
+      console.log('[SERIAL] Notice sending json on:', e);
+    }
+
     const btn = document.getElementById('btn-web-serial');
     if (btn) {
       btn.classList.add('active');
@@ -521,6 +579,11 @@ async function connectWebSerial() {
     setDeviceStatus(true, 'USB Serial (115200 baud)');
     setConnStatus('connected', 'USB Serial');
     setModePill('LIVE USB');
+
+    // Show initial connected feedback immediately
+    setCheckChip('chk-conn', true, 'USB Active', 'Live');
+    const diagTitle = document.getElementById('diag-title');
+    if (diagTitle) diagTitle.textContent = 'Hardware Connected — Receiving Telemetry...';
 
     const textDecoder = new TextDecoderStream();
     port.readable.pipeTo(textDecoder.writable);
@@ -537,18 +600,34 @@ async function connectWebSerial() {
 
       for (const line of lines) {
         const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // 1. Check for JSON format: { ... }
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
           try {
             const parsed = JSON.parse(trimmed);
             handleHardwarePayload(parsed);
+            continue;
           } catch (e) {
             console.warn('[SERIAL] JSON parse error:', e);
+          }
+        }
+
+        // 2. Check for firmware text output: [DATA] knee ... | flex ...
+        if (trimmed.includes('[DATA]') || (trimmed.includes('knee') && trimmed.includes('flex'))) {
+          const parsed = parseDataLine(trimmed);
+          if (parsed) {
+            handleHardwarePayload(parsed);
+            continue;
           }
         }
       }
     }
   } catch (err) {
     console.error('[SERIAL] Connection error:', err);
+    if (err && err.message && err.message.includes('Failed to open')) {
+      alert('⚠️ USB Port Busy: Please CLOSE the Arduino IDE Serial Monitor window and try again. Windows only allows one program to access COM8 at a time.');
+    }
   }
 }
 
@@ -586,17 +665,46 @@ async function connectWebBluetooth() {
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService('12345678-1234-5678-1234-56789abcdef0');
 
-    // Sensor data: characteristic ..def1 (NOTIFY — live JSON telemetry every 500ms)
+    // Sensor data: characteristic ..def1 (NOTIFY — live JSON telemetry)
     const sensorChar = await service.getCharacteristic('12345678-1234-5678-1234-56789abcdef1');
     await sensorChar.startNotifications();
+
+    let bleStreamBuffer = '';
     sensorChar.addEventListener('characteristicvaluechanged', (event) => {
-      const value = new TextDecoder().decode(event.target.value);
-      try {
-        const parsed = JSON.parse(value);
-        if (parsed.status === 'waiting') return; // ignore init placeholder
-        handleHardwarePayload(parsed);
-      } catch (e) {
-        console.warn('[BLE] JSON parse error:', e, value.substring(0, 80));
+      const chunk = new TextDecoder().decode(event.target.value);
+      bleStreamBuffer += chunk;
+
+      // 1. Try single complete JSON or extract { ... } from accumulated stream
+      const startIdx = bleStreamBuffer.indexOf('{');
+      const endIdx   = bleStreamBuffer.lastIndexOf('}');
+      if (startIdx !== -1 && endIdx > startIdx) {
+        const jsonStr = bleStreamBuffer.substring(startIdx, endIdx + 1);
+        try {
+          const parsed = JSON.parse(jsonStr);
+          bleStreamBuffer = bleStreamBuffer.substring(endIdx + 1);
+          if (parsed.status !== 'waiting') {
+            handleHardwarePayload(parsed);
+            return;
+          }
+        } catch (e) {
+          // Keep chunking if not full JSON yet
+        }
+      }
+
+      // 2. Check for [DATA] formatted line in BLE stream
+      const dataMatch = bleStreamBuffer.match(/\[DATA\][^\r\n]+/);
+      if (dataMatch) {
+        const parsed = parseDataLine(dataMatch[0]);
+        if (parsed) {
+          bleStreamBuffer = bleStreamBuffer.substring(dataMatch.index + dataMatch[0].length);
+          handleHardwarePayload(parsed);
+          return;
+        }
+      }
+
+      // Cap buffer size to avoid memory overflow
+      if (bleStreamBuffer.length > 3000) {
+        bleStreamBuffer = bleStreamBuffer.substring(bleStreamBuffer.length - 800);
       }
     });
 
@@ -626,6 +734,12 @@ async function connectWebBluetooth() {
     setDeviceStatus(true, device.name || 'JointSense_OsteoBelt');
     setConnStatus('connected', 'BLE Direct');
     setModePill('LIVE BLE');
+
+    // Immediate visual feedback while waiting for first packet
+    setCheckChip('chk-conn', true, 'BLE Active', 'Live');
+    const diagTitle = document.getElementById('diag-title');
+    if (diagTitle) diagTitle.textContent = 'Hardware Connected — Receiving Telemetry...';
+
     console.info('[BLE] Connected to', device.name, '- Streaming live telemetry...');
   } catch (err) {
     console.error('[BLE] Connection error:', err);

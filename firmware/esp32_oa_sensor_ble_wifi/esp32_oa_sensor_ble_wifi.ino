@@ -149,7 +149,7 @@ static DallasTemperature ds18b20(&oneWire);
 static DeviceAddress dsAddr[2];
 static int dsCount = 0;
 static bool i2sOK = false;
-static bool verboseJson = false;
+static bool verboseJson = true;
 static uint32_t sampleIdx = 0;
 
 static const float RAD2DEG = 57.2957795f;
