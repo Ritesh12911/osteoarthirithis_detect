@@ -876,36 +876,32 @@ function handleHardwarePayload(data) {
   const batPct  = data.battery_pct ?? 0;
   const batV    = data.battery_v ?? 0;
 
-  // Active motion detection: requires physical articulating ROM >= 15 deg AND cadence >= 25 spm
-  // Sitting on a desk or static position has ROM 0-5 deg -> guaranteed AT REST
+  // Active motion detection: physical articulating ROM >= 8 deg or cadence >= 15 spm
   const rom        = data.rom_deg ?? data.gyro_range_deg ?? 0;
   const rawCadence = data.cadence_spm ?? 0;
-  const isMoving   = (rom >= 15 && rawCadence >= 25);
+  const isMoving   = (rom >= 8 || rawCadence >= 15);
   const cadence    = isMoving ? rawCadence : 0;
 
   // Raw values from firmware
   const rawKneeAngle = data.knee_angle_deg ?? data.flex_angle_deg ?? 0;
   const flexAngle    = Math.max(0, Math.min(140, rawKneeAngle - (state.kneeZeroOffset || 0)));
-  const crepScore    = isMoving ? (data.crepitus_score ?? 0) : 0.0;
+  const crepScore    = data.crepitus_score ?? 0; // NEVER zero out crepitus: detect crack sound even when stationary
   const jointTemp    = tempOk ? data.joint_temp_c : null;
   const symmetry     = isMoving ? (data.step_symmetry ?? 0.9) : 1.0;
 
   // Real-time clinical assessment:
-  // When steady / at rest: joint has 0 friction, normal healthy resting score
   let riskScore = 0.09;
   let riskLevel = 'LOW';
   let label     = 'Normal';
 
-  if (isMoving) {
-    if (crepScore > 0.45 || (tempOk && jointTemp > 35.8 && (data.temp_asymmetry ?? 0) > 1.2)) {
-      riskScore = 0.78;
-      riskLevel = 'HIGH';
-      label     = 'Early_OA';
-    } else if (crepScore > 0.25 || rom < 60) {
-      riskScore = 0.42;
-      riskLevel = 'MODERATE';
-      label     = 'Mild_OA';
-    }
+  if (crepScore > 0.45 || (tempOk && jointTemp > 35.8 && (data.temp_asymmetry ?? 0) > 1.2)) {
+    riskScore = 0.78;
+    riskLevel = 'HIGH';
+    label     = 'Early_OA';
+  } else if (crepScore > 0.25 || (isMoving && rom < 60)) {
+    riskScore = 0.42;
+    riskLevel = 'MODERATE';
+    label     = 'Mild_OA';
   } else if (tempOk && jointTemp > 36.4) {
     // Resting thermal inflammation
     riskScore = 0.52;
@@ -924,8 +920,13 @@ function handleHardwarePayload(data) {
       jointTemp: jointTemp ?? 25.0
     };
   } else {
-    state.smoothed.flexAngle = state.smoothed.flexAngle * 0.75 + flexAngle * 0.25;
-    state.smoothed.crepScore = state.smoothed.crepScore * 0.8 + crepScore * 0.2;
+    state.smoothed.flexAngle = state.smoothed.flexAngle * 0.65 + flexAngle * 0.35;
+    // Fast attack, smooth decay on acoustic crack sound
+    if (crepScore > 0.05) {
+      state.smoothed.crepScore = Math.max(state.smoothed.crepScore * 0.3 + crepScore * 0.7, crepScore);
+    } else {
+      state.smoothed.crepScore = state.smoothed.crepScore * 0.82;
+    }
     state.smoothed.riskScore = state.smoothed.riskScore * 0.85 + riskScore * 0.15;
     state.smoothed.symmetry  = state.smoothed.symmetry * 0.85 + symmetry * 0.15;
     state.smoothed.batPct    = Math.round(state.smoothed.batPct * 0.95 + batPct * 0.05);
@@ -965,7 +966,7 @@ function handleHardwarePayload(data) {
         audio_dbfs:       data.audio_dbfs ?? -120,
         dominant_freq_hz: data.dominant_freq_hz ?? 0,
         crepitus_score:   Number(state.smoothed.crepScore.toFixed(2)),
-        crepitus_events:  isMoving ? (data.crepitus_events ?? 0) : 0,
+        crepitus_events:  (data.crepitus_events ?? 0),
         mic_ok:           micOk
       },
       temperature: {
@@ -1242,11 +1243,11 @@ function updateSeniorCard(p) {
   const soundEl = document.getElementById('senior-vital-sound');
   const soundTag = document.getElementById('senior-vital-sound-tag');
   if (soundEl && soundTag) {
-    if (cr < 0.20) {
+    if (cr < 0.12) {
       soundEl.textContent = 'Clear';
       soundTag.textContent = 'No Crepitus';
       soundTag.className = 'senior-vital-tag good';
-    } else if (cr < 0.50) {
+    } else if (cr < 0.45) {
       soundEl.textContent = 'Clicking';
       soundTag.textContent = 'Mild Crepitus';
       soundTag.className = 'senior-vital-tag warn';

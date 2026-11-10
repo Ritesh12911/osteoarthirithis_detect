@@ -249,7 +249,7 @@ static bool i2cReadRegs(uint8_t a, uint8_t r, uint8_t *buf, uint8_t n) {
 static bool imuBegin(Imu &m) {
   uint8_t who = 0;
   if (!i2cReadRegs(m.addr, 0x75, &who, 1)) return false;
-  if (who != 0x68 && who != 0x70 && who != 0x72) return false;   // genuine / common clones
+  if (who == 0 || who == 0xFF) return false;                      // bus error / NACK
   if (!i2cWriteReg(m.addr, 0x6B, 0x01)) return false;             // wake, PLL(gyro X) clock
   delay(50);
   i2cWriteReg(m.addr, 0x1A, 0x03);                                // DLPF ~44 Hz
@@ -257,6 +257,7 @@ static bool imuBegin(Imu &m) {
   i2cWriteReg(m.addr, 0x1B, 0x08);                                // gyro  +-500 dps
   i2cWriteReg(m.addr, 0x1C, 0x08);                                // accel +-4 g
   m.ok = true; m.init = false; m.fails = 0;
+  Serial.printf("[IMU 0x%02X] active (WHO_AM_I: 0x%02X)\n", m.addr, who);
   return true;
 }
 
@@ -311,11 +312,17 @@ static float g_kneeImu = 0;
 static bool  g_kneeImuValid = false;
 
 static void zeroKnee() {
-  if (!(imuT.ok && imuS.ok)) { Serial.println("[CAL] Zero needs both IMUs."); return; }
-  kneeRawZero = wrap180(imuT.theta - imuS.theta);
-  imuT.yaw = imuS.yaw = 0;
+  Imu *prim = imuT.ok ? &imuT : (imuS.ok ? &imuS : nullptr);
+  if (imuT.ok && imuS.ok) {
+    kneeRawZero = wrap180(imuT.theta - imuS.theta);
+    imuT.yaw = imuS.yaw = 0;
+  } else if (prim) {
+    kneeRawZero = prim->theta;
+    prim->yaw = 0;
+  }
+  if (flexOhmEma > 1000.0f) flexBaseOhm = flexOhmEma;
   nvsPutFloat("kz", kneeRawZero);
-  Serial.printf("[CAL] Knee zero stored (raw %.1f). Leg should be straight.\n", kneeRawZero);
+  Serial.printf("[CAL] Knee zero stored (raw %.1f, flexBase %.0f ohm). Leg straight.\n", kneeRawZero, flexBaseOhm);
 }
 
 static float strideMs[8]; static uint8_t strideN = 0;
@@ -342,6 +349,7 @@ static bool isMoving() { return lastSwingMs != 0 && (millis() - lastSwingMs) < 3
 struct FlexCal { uint8_t n; float deg[MAX_CAL]; float ohm[MAX_CAL]; };
 static FlexCal flexCal = {0, {0}, {0}};
 static float flexOhmEma = 0;
+static float flexBaseOhm = 12000.0f;
 
 static float flexReadMv() {
   uint32_t s = 0;
@@ -372,13 +380,22 @@ static void flexCalSave() { prefs.begin("oa", false); prefs.putBytes("flexcal", 
 
 static bool flexCalibrated() { return flexCal.n >= 2; }
 static float flexAngleFromOhm(float ohm) {         // piecewise-linear in resistance
-  if (flexCal.n < 2) return 0;
-  uint8_t n = flexCal.n, i = 0;
-  while (i < n - 2 && ohm > flexCal.ohm[i + 1]) i++;
-  float span = flexCal.ohm[i + 1] - flexCal.ohm[i];
-  float a = (fabsf(span) < 1.0f) ? flexCal.deg[i]
-          : flexCal.deg[i] + (ohm - flexCal.ohm[i]) * (flexCal.deg[i + 1] - flexCal.deg[i]) / span;
-  return constrain(a, -10.0f, 160.0f);
+  if (flexCal.n >= 2) {
+    uint8_t n = flexCal.n, i = 0;
+    while (i < n - 2 && ohm > flexCal.ohm[i + 1]) i++;
+    float span = flexCal.ohm[i + 1] - flexCal.ohm[i];
+    float a = (fabsf(span) < 1.0f) ? flexCal.deg[i]
+            : flexCal.deg[i] + (ohm - flexCal.ohm[i]) * (flexCal.deg[i + 1] - flexCal.deg[i]) / span;
+    return constrain(a, 0.0f, 140.0f);
+  }
+  // Dynamic uncalibrated curve for standard 10k-40k flex sensors:
+  if (ohm > 1000.0f && ohm < 300000.0f) {
+    if (ohm < flexBaseOhm && ohm > 3000.0f) flexBaseOhm = flexBaseOhm * 0.95f + ohm * 0.05f;
+    float delta = ohm - flexBaseOhm;
+    float deg = delta * (120.0f / 25000.0f);
+    return constrain(deg, 0.0f, 140.0f);
+  }
+  return 0.0f;
 }
 
 // ---- auto-calibration: slowly flex the knee 0->120->0 while the IMU pair
@@ -506,12 +523,10 @@ static void audioTask(void *) {
     }
     float bandE = sqrtf(bandSq);
 
-    // crepitus = short broadband bursts in 0.3-2 kHz
-    // Motion gate removed: register acoustic events any time the mic detects a real burst
-    // The dashboard EMA + motion gating suppresses resting noise display-side
+    // crepitus = short broadband bursts in 0.3-2 kHz or transient acoustic crack/click
     uint32_t now = millis();
-    bool burst = bandE > floorE * 3.0f && bandE > 0.0008f;   // lowered threshold for INMP441
-    if (burst && (now - lastEvt) > 60) { lastEvt = now; evt[evtIdx++ & 31] = now; }
+    bool burst = (bandE > floorE * 2.0f && bandE > 0.0003f) || (rms > 0.005f);
+    if (burst && (now - lastEvt) > 40) { lastEvt = now; evt[evtIdx++ & 31] = now; }
     floorE += ((bandE < floorE * 2.0f) ? 0.02f : 0.001f) * (bandE - floorE);
     floorE = fmaxf(floorE, 1e-5f);
 
@@ -750,20 +765,27 @@ static void imuService() {
     }
   }
 
-  // knee angle from the two segment angles
+  // knee angle from the two segment angles, or single IMU sagittal tilt
+  Imu *prim = imuT.ok ? &imuT : (imuS.ok ? &imuS : nullptr);
   if (imuT.ok && imuS.ok && imuT.init && imuS.init) {
     float kr = wrap180((imuT.theta - imuS.theta) - kneeRawZero);
     if (kneeSignDir == 0 && fabsf(kr) > 25.0f) { kneeSignDir = (kr > 0) ? 1 : -1; nvsPutInt("ksign", kneeSignDir); }
-    g_kneeImu = (kneeSignDir == 0 ? 1 : kneeSignDir) * kr;
+    g_kneeImu = fabsf((kneeSignDir == 0 ? 1 : kneeSignDir) * kr);
     g_kneeImuValid = true;
-  } else g_kneeImuValid = false;
+  } else if (prim && prim->init) {
+    // Single IMU mode: joint tilt/flexion angle relative to straight-leg zero
+    float kr = wrap180(prim->theta - kneeRawZero);
+    g_kneeImu = constrain(fabsf(kr), 0.0f, 140.0f);
+    g_kneeImuValid = true;
+  } else {
+    g_kneeImuValid = false;
+  }
 
   // motion gate for audio + gait
-  Imu *prim = imuT.ok ? &imuT : (imuS.ok ? &imuS : nullptr);
   float sp = (imuT.ok && imuS.ok) ? fabsf(imuT.gz - imuS.gz) : (prim ? fabsf(prim->gz) : 0.0f);
-  g_motionDps = g_motionDps + 0.1f * (sp - g_motionDps);
-  if (imuS.ok) gaitUpdate(fabsf(imuS.gz), 150.0f, 50.0f, nowMs);
-  else if (imuT.ok) gaitUpdate(fabsf(imuT.gz), 70.0f, 25.0f, nowMs);
+  g_motionDps = g_motionDps + 0.15f * (sp - g_motionDps);
+  if (imuS.ok) gaitUpdate(fabsf(imuS.gz), 25.0f, 10.0f, nowMs);
+  else if (imuT.ok) gaitUpdate(fabsf(imuT.gz), 25.0f, 10.0f, nowMs);
 
   // dynamic acceleration RMS (gravity removed by running mean)
   if (prim) {
@@ -788,7 +810,15 @@ static void slowService() {                           // 10 Hz
   last = now;
   float ohm = flexMvToOhm(flexReadMv());
   flexOhmEma = (flexOhmEma <= 0) ? ohm : flexOhmEma + 0.3f * (ohm - flexOhmEma);
-  float ang = g_kneeImuValid ? g_kneeImu : (flexCalibrated() ? flexAngleFromOhm(flexOhmEma) : 0.0f);
+  float flexAng = flexAngleFromOhm(flexOhmEma);
+  float ang = 0.0f;
+  if (g_kneeImuValid && flexAng > 10.0f) {
+    ang = 0.6f * g_kneeImu + 0.4f * flexAng;
+  } else if (g_kneeImuValid) {
+    ang = g_kneeImu;
+  } else {
+    ang = flexAng;
+  }
   romBuf[romIdx] = ang; romIdx = (romIdx + 1) % (ROM_WINDOW_S * 10);
   if (romCount < ROM_WINDOW_S * 10) romCount++;
   if (now - lastBat > 1000) { lastBat = now; batteryService(); }
@@ -805,14 +835,13 @@ static void telemetryService() {
 
   // range of motion over the last ROM_WINDOW_S seconds
   float rom = 0;
-  if (romCount >= 30) {
+  if (romCount >= 10) {
     float lo = 1e9f, hi = -1e9f;
     for (uint16_t i = 0; i < romCount; i++) { lo = fminf(lo, romBuf[i]); hi = fmaxf(hi, romBuf[i]); }
     rom = hi - lo;
   }
-  // Motion gating: device must articulate with ROM >= 15 deg to be considered walking/moving
-  bool moving = isMoving() && (rom >= 15.0f);
-  if (moving && romCount >= 30) stiffness = constrain(1.0f - rom / ROM_REF_DEG, 0.0f, 1.0f);
+  bool moving = isMoving() || (rom >= 8.0f);
+  if (moving && romCount >= 10) stiffness = constrain(1.0f - rom / ROM_REF_DEG, 0.0f, 1.0f);
   else stiffness = 0.0f;
 
   // stride statistics (enforce 0 at rest to prevent noisy spikes)
@@ -829,12 +858,24 @@ static void telemetryService() {
   if (accN > 0) for (int k = 0; k < 3; k++) arms[k] = sqrtf((float)(accSq[k] / accN)) * 9.80665f;
   accSq[0] = accSq[1] = accSq[2] = 0; accN = 0;
 
-  float flexAng = flexCalibrated() ? flexAngleFromOhm(flexOhmEma) : 0.0f;
+  float flexAng = flexAngleFromOhm(flexOhmEma);
+  float kneeBest = 0.0f;
+  if (g_kneeImuValid && flexAng > 10.0f) {
+    kneeBest = 0.6f * g_kneeImu + 0.4f * flexAng;
+  } else if (g_kneeImuValid) {
+    kneeBest = g_kneeImu;
+  } else {
+    kneeBest = flexAng;
+  }
   float disagree = (g_kneeImuValid && flexCalibrated()) ? fabsf(g_kneeImu - flexAng) : 0.0f;
-  float kneeBest = g_kneeImuValid ? g_kneeImu : flexAng;
   float tAsym = isnan(jointC) ? 0.0f : fabsf(jointC - 33.0f);
-  // Crepitus represents joint acoustic friction during articulation; at rest, ambient sound is filtered
-  float crep = moving ? constrain(au.events5s / 8.0f, 0.0f, 1.0f) : 0.0f;
+
+  // Crepitus: 1 burst in 5s window = 0.38 (mild clicking), 2 = 0.60 (crackling), 3+ = 0.85+
+  float crep = 0.0f;
+  if (au.events5s >= 3) crep = constrain(0.60f + (au.events5s - 3) * 0.1f, 0.0f, 1.0f);
+  else if (au.events5s == 2) crep = 0.60f;
+  else if (au.events5s == 1) crep = 0.38f;
+  else crep = 0.0f;
 
 #if ARDUINOJSON_VERSION_MAJOR >= 7
   JsonDocument doc;
@@ -858,7 +899,7 @@ static void telemetryService() {
   doc["knee_angle_deg"] = r2(kneeBest);
   doc["flex_angle_deg"] = r2(flexAng);      doc["flex_stiffness"] = r2(stiffness);
   doc["flex_calibrated"] = flexCalibrated() ? 1 : 0;
-  doc["imu_pair_ok"] = g_kneeImuValid ? 1 : 0;
+  doc["imu_pair_ok"] = (imuT.ok || imuS.ok) ? 1 : 0;
   doc["angle_disagree_deg"] = r2(disagree);
   doc["battery_v"] = r2(vbat);              doc["battery_pct"] = batteryPct(vbat);
   doc["fw"] = FW_VERSION;
@@ -913,6 +954,20 @@ void setup() {
   if (prefs.getBytesLength("flexcal") == sizeof(FlexCal)) prefs.getBytes("flexcal", &flexCal, sizeof(FlexCal));
   prefs.end();
   if (flexCal.n > MAX_CAL) flexCal.n = 0;
+  if (flexCal.n >= 2) {
+    float minDeg = 999, maxDeg = -999, minOhm = 1e9, maxOhm = -1e9;
+    for (int i = 0; i < flexCal.n; i++) {
+      if (flexCal.deg[i] < minDeg) minDeg = flexCal.deg[i];
+      if (flexCal.deg[i] > maxDeg) maxDeg = flexCal.deg[i];
+      if (flexCal.ohm[i] < minOhm) minOhm = flexCal.ohm[i];
+      if (flexCal.ohm[i] > maxOhm) maxOhm = flexCal.ohm[i];
+    }
+    if ((maxDeg - minDeg) < 15.0f || (maxOhm - minOhm) < 1500.0f) {
+      Serial.println("[FLEX] Stored calibration invalid, resetting to dynamic auto-sensing.");
+      flexCal.n = 0;
+      prefs.begin("oa", false); prefs.remove("flexcal"); prefs.end();
+    }
+  }
 
   analogReadResolution(12);
   analogSetPinAttenuation(PIN_FLEX, ADC_11db);
