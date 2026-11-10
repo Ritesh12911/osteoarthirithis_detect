@@ -93,11 +93,23 @@ const FEATURE_DISPLAY = [
 const state = {
   socket: null,
   activeChart: 'audio',
-  demoRunning: false,
-  demoInterval: null,
+  hwConnected: false,
+  hwVerified: false,
+  kneeZeroOffset: 0,
+  sensorHealth: {
+    conn: false,
+    mic: false,
+    temp: false,
+    imu: false,
+    flex: false,
+    bat: false
+  },
   serialPort: null,
   serialReader: null,
   bleDevice: null,
+  bleServer: null,
+  bleSensorChar: null,
+  bleFftChar: null,
   lastReading: null,
   sessionCount: 0,
   normalCount: 0,
@@ -499,9 +511,7 @@ async function connectWebSerial() {
     const port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
     state.serialPort = port;
-
-    // ── STOP demo simulation — real hardware is now streaming ──
-    if (state.demoRunning) stopDemo();
+    state.hwConnected = true;
 
     const btn = document.getElementById('btn-web-serial');
     if (btn) {
@@ -550,16 +560,26 @@ async function connectWebBluetooth() {
 
   try {
     const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: 'OA_Detector_SIH2026' }],
+      filters: [
+        { name: 'JointSense_OsteoBelt' },
+        { name: 'OA_Detector_SIH2026' },
+        { namePrefix: 'JointSense' },
+        { namePrefix: 'Osteo' },
+        { namePrefix: 'OA_' }
+      ],
       optionalServices: ['12345678-1234-5678-1234-56789abcdef0']
     });
 
     device.addEventListener('gattserverdisconnected', () => {
       const btn = document.getElementById('btn-web-ble');
       if (btn) { btn.classList.remove('active'); btn.innerHTML = '⬡ BLE Connect'; }
+      state.hwConnected = false;
+      state.bleDevice = null;
+      state.bleServer = null;
       setDeviceStatus(false);
       setConnStatus('error', 'BLE Disconnected');
-      setModePill('DEMO STREAM');
+      setModePill('AWAITING DEVICE');
+      updateHardwareDiagnostics(null);
       console.warn('[BLE] Device disconnected.');
     });
 
@@ -580,65 +600,236 @@ async function connectWebBluetooth() {
       }
     });
 
+    // Optional: FFT Spectrum Characteristic ..def3 (16-bin spectrum)
+    try {
+      const fftChar = await service.getCharacteristic('12345678-1234-5678-1234-56789abcdef3');
+      await fftChar.startNotifications();
+      fftChar.addEventListener('characteristicvaluechanged', (ev) => {
+        const bins = new Uint8Array(ev.target.value.buffer);
+        if (typeof drawWaterfallSlice === 'function') {
+          drawWaterfallSlice(bins);
+          updateSpectrogramHUD(bins, false, 0, 8000);
+        }
+      });
+      state.bleFftChar = fftChar;
+    } catch (e) {
+      console.log('[BLE] FFT characteristic subscription notice:', e);
+    }
+
     state.bleDevice     = device;
     state.bleServer     = server;
     state.bleSensorChar = sensorChar;
-
-    // ── STOP demo simulation — real hardware is now streaming ──
-    if (state.demoRunning) stopDemo();
+    state.hwConnected   = true;
 
     const btn = document.getElementById('btn-web-ble');
     if (btn) { btn.classList.add('active'); btn.innerHTML = '<span style="color:#10b981">●</span> BLE Connected'; }
-    setDeviceStatus(true, 'BLE 5.0 — OA_Detector_SIH2026');
+    setDeviceStatus(true, device.name || 'JointSense_OsteoBelt');
     setConnStatus('connected', 'BLE Direct');
     setModePill('LIVE BLE');
-    console.info('[BLE] Connected to OA_Detector_SIH2026. Streaming live telemetry...');
+    console.info('[BLE] Connected to', device.name, '- Streaming live telemetry...');
   } catch (err) {
     console.error('[BLE] Connection error:', err);
     setConnStatus('error', 'BLE Failed');
   }
 }
 
+// ── ZERO KNEE ANGLE CALIBRATION ────────────────────────────────
+function zeroKneeCalibration() {
+  if (state.lastReading && state.lastReading.raw_knee_angle !== undefined) {
+    state.kneeZeroOffset = state.lastReading.raw_knee_angle;
+    showAlert(`⚖️ Knee angle calibrated to 0° (Offset: ${state.kneeZeroOffset.toFixed(1)}°). Straight leg reference stored.`);
+  } else {
+    state.kneeZeroOffset = 0;
+    showAlert('⚖️ Knee angle zeroed.');
+  }
+}
+
+// ── HARDWARE SENSOR HEALTH DIAGNOSTIC ENGINE ──────────────────
+function updateHardwareDiagnostics(payload, rawData = null) {
+  const banner = document.getElementById('hw-diag-banner');
+  const dot = document.getElementById('diag-status-dot');
+  const title = document.getElementById('diag-title');
+  const sub = document.getElementById('diag-sub');
+  const zeroBtn = document.getElementById('diag-btn-zero');
+  const sideZeroBtn = document.getElementById('sidebar-zero-btn');
+
+  if (!payload || !payload.hardware_live) {
+    if (banner) banner.className = 'glass-card hw-diag-banner';
+    if (dot) dot.className = 'hw-diag-dot';
+    if (title) title.textContent = 'Device Disconnected — Awaiting Hardware';
+    if (sub) sub.textContent = 'Connect your OsteoBelt brace via Bluetooth LE or USB Serial to begin live testing.';
+    if (zeroBtn) zeroBtn.style.display = 'none';
+
+    setCheckChip('chk-conn', false, 'Disconnected', 'Offline');
+    setCheckChip('chk-mic', false, 'Waiting...', '--');
+    setCheckChip('chk-temp', false, 'Waiting...', '--');
+    setCheckChip('chk-imu', false, 'Waiting...', '--');
+    setCheckChip('chk-flex', false, 'Waiting...', '--');
+    setCheckChip('chk-bat', false, 'Waiting...', '--');
+    return;
+  }
+
+  const s = payload.sensors || {};
+  const mic = s.microphone || {};
+  const temp = s.temperature || {};
+  const imu = s.imu || {};
+  const flex = s.flex || {};
+
+  const connOk = true;
+  const micOk = mic.mic_ok ?? (mic.audio_dbfs > -95 || mic.audio_rms > 0.0001);
+  const tempOk = temp.temp_valid === true && temp.joint_temp_c !== null && temp.joint_temp_c > 10.0;
+  const imuOk = imu.imu_ok ?? true;
+  const flexOk = flex.flex_calibrated ?? true;
+  const batPct = payload.battery_pct ?? (rawData ? rawData.battery_pct : 0);
+  const batV = payload.battery_v ?? (rawData ? rawData.battery_v : 0);
+  const batOk = batPct > 15;
+
+  const allFunctional = micOk && tempOk && imuOk;
+
+  setCheckChip('chk-conn', true, state.bleDevice ? 'BLE Active' : 'USB Serial', 'Live');
+  setCheckChip('chk-mic', micOk, micOk ? `${Math.round(mic.dominant_freq_hz)}Hz · ${mic.audio_dbfs.toFixed(0)}dB` : 'Silent / Check I2S', micOk ? 'OK' : 'Check');
+  setCheckChip('chk-temp', tempOk, tempOk ? `${temp.joint_temp_c.toFixed(1)}°C (1-Wire)` : 'Disconnected (GPIO 5)', tempOk ? 'OK' : 'Offline');
+  setCheckChip('chk-imu', imuOk, imuOk ? (imu.is_moving ? `In Motion (${Math.round(imu.gyro_range_deg)}°)` : 'Steady / Resting') : 'Pod Error', imuOk ? 'OK' : 'Check');
+  setCheckChip('chk-flex', flexOk, `${Math.round(flex.flex_angle_deg)}° ${flexOk ? '(Calibrated)' : '(Uncal)'}`, flexOk ? 'OK' : 'Notice');
+  setCheckChip('chk-bat', batOk, batPct > 0 ? `${batPct}% (${batV.toFixed(2)}V)` : 'USB Power', batOk ? 'OK' : (batPct > 0 ? 'Low' : 'USB'));
+
+  if (banner) {
+    banner.className = `glass-card hw-diag-banner ${allFunctional ? 'ready' : 'warning'}`;
+  }
+  if (dot) dot.className = `hw-diag-dot ${allFunctional ? 'ready' : 'connecting'}`;
+  if (title) {
+    title.textContent = allFunctional 
+      ? 'All Sensors Verified & Functional — Live Telemetry Active ✅'
+      : 'Hardware Connected — Verifying Sensor Modules ⚠️';
+  }
+  if (sub) {
+    if (allFunctional) {
+      const movingStr = imu.is_moving ? `Knee in motion (ROM ${Math.round(imu.gyro_range_deg)}°, Cadence ${Math.round(imu.cadence_spm)} spm)` : 'Device is steady at rest. Real-time telemetry streaming.';
+      sub.textContent = `${movingStr} | Firmware v${payload.fw || '3.0'}`;
+    } else {
+      let issues = [];
+      if (!tempOk) issues.push('DS18B20 Temp offline');
+      if (!micOk) issues.push('Mic signal quiet');
+      if (!imuOk) issues.push('IMU pod communication');
+      sub.textContent = `Notice: ${issues.join(' · ')} | Working sensors streaming real raw data.`;
+    }
+  }
+
+  if (zeroBtn) zeroBtn.style.display = 'inline-flex';
+  if (sideZeroBtn) sideZeroBtn.style.display = 'flex';
+}
+
+function setCheckChip(id, ok, valText, badgeText) {
+  const chip = document.getElementById(id);
+  if (!chip) return;
+  chip.className = `hw-check-chip ${ok ? 'ok' : 'warn'}`;
+  const val = chip.querySelector('.chk-val');
+  const badge = chip.querySelector('.chk-badge');
+  if (val) val.textContent = valText;
+  if (badge) {
+    badge.textContent = badgeText;
+    badge.className = `chk-badge ${ok ? 'ok' : 'warn'}`;
+  }
+}
+
 function handleHardwarePayload(data) {
-  // Convert flat hardware JSON into nested structure expected by dashboard
+  // Validate sensor status flags directly from ESP32 firmware
+  const micOk   = typeof data.audio_dbfs === 'number' ? (data.audio_dbfs > -95) : ((data.audio_rms ?? 0) > 0.0001);
+  const tempOk  = (data.temp_valid === 1) && (data.joint_temp_c !== undefined) && (data.joint_temp_c > 10.0);
+  const imuOk   = (data.imu_pair_ok === 1) || ((data.accel_rms_z ?? 0) > 5.0);
+  const flexOk  = data.flex_calibrated === 1;
+  const batPct  = data.battery_pct ?? 0;
+  const batV    = data.battery_v ?? 0;
+
+  // Active motion detection
+  const rom     = data.rom_deg ?? data.gyro_range_deg ?? 0;
+  const cadence = data.cadence_spm ?? 0;
+  const isMoving = (cadence > 15 || rom > 10);
+
+  // Raw values from firmware
+  const rawKneeAngle = data.knee_angle_deg ?? data.flex_angle_deg ?? 0;
+  const flexAngle    = Math.max(0, Math.min(140, rawKneeAngle - (state.kneeZeroOffset || 0)));
+  const crepScore    = data.crepitus_score ?? 0;
+  const jointTemp    = tempOk ? data.joint_temp_c : null;
+  const symmetry     = isMoving ? (data.step_symmetry ?? 0.9) : 1.0;
+
+  // Real-time clinical assessment:
+  // When steady / at rest: joint has 0 friction, normal healthy resting score
+  let riskScore = 0.09;
+  let riskLevel = 'LOW';
+  let label     = 'Normal';
+
+  if (isMoving) {
+    if (crepScore > 0.45 || (tempOk && jointTemp > 35.8 && (data.temp_asymmetry ?? 0) > 1.2)) {
+      riskScore = 0.78;
+      riskLevel = 'HIGH';
+      label     = 'Early_OA';
+    } else if (crepScore > 0.25 || rom < 60) {
+      riskScore = 0.42;
+      riskLevel = 'MODERATE';
+      label     = 'Mild_OA';
+    }
+  } else if (tempOk && jointTemp > 36.4) {
+    // Resting thermal inflammation
+    riskScore = 0.52;
+    riskLevel = 'MODERATE';
+    label     = 'Mild_Inflammation';
+  }
+
   const payload = {
     patient_id: data.patient_id ?? 'PATIENT_001',
     timestamp: new Date().toISOString(),
+    fw: data.fw ?? '3.0',
+    battery_pct: batPct,
+    battery_v: batV,
+    raw_knee_angle: rawKneeAngle,
     sensors: {
       microphone: {
-        audio_rms:        data.audio_rms        ?? 0.02,
-        dominant_freq_hz: data.dominant_freq_hz ?? 150,
-        crepitus_score:   data.crepitus_score   ?? 0.05
+        audio_rms:        data.audio_rms ?? 0,
+        audio_dbfs:       data.audio_dbfs ?? -120,
+        dominant_freq_hz: data.dominant_freq_hz ?? 0,
+        crepitus_score:   crepScore,
+        crepitus_events:  data.crepitus_events ?? 0,
+        mic_ok:           micOk
       },
       temperature: {
-        joint_temp_c:   data.joint_temp_c   ?? 33.2,
+        joint_temp_c:   jointTemp,
         ambient_temp_c: data.ambient_temp_c ?? 28.0,
-        temp_asymmetry: data.temp_asymmetry ?? 0.1
+        temp_asymmetry: tempOk ? (data.temp_asymmetry ?? 0) : 0,
+        temp_valid:     tempOk
       },
       imu: {
-        accel_rms_x:   data.accel_rms_x   ?? 0.85,
-        accel_rms_y:   data.accel_rms_y   ?? 0.90,
-        accel_rms_z:   data.accel_rms_z   ?? 9.82,
-        gyro_range_deg: data.gyro_range_deg ?? 105,
-        step_symmetry:  data.step_symmetry  ?? 0.92,
-        pitch: data.pitch ?? 0,
-        roll:  data.roll  ?? 0,
-        yaw:   data.yaw   ?? 0
+        accel_rms_x:    data.accel_rms_x ?? 0,
+        accel_rms_y:    data.accel_rms_y ?? 0,
+        accel_rms_z:    data.accel_rms_z ?? 9.8,
+        gyro_range_deg: rom,
+        step_symmetry:  symmetry,
+        cadence_spm:    cadence,
+        is_moving:      isMoving,
+        pitch:          data.pitch ?? 0,
+        roll:           data.roll ?? 0,
+        yaw:            data.yaw ?? 0,
+        imu_ok:         imuOk
       },
       flex: {
-        flex_angle_deg: data.flex_angle_deg ?? 112,
-        flex_stiffness: data.flex_stiffness ?? 0.12
+        flex_angle_deg:  flexAngle,
+        flex_stiffness:  data.flex_stiffness ?? 0,
+        flex_calibrated: flexOk
       }
     },
     inference: {
-      risk_score: (data.crepitus_score > 0.4 || data.joint_temp_c > 35.5) ? 0.85 : 0.12,
-      label: (data.crepitus_score > 0.4 || data.joint_temp_c > 35.5) ? 'Early_OA' : 'Normal',
-      risk_level: (data.crepitus_score > 0.4 || data.joint_temp_c > 35.5) ? 'HIGH' : 'LOW',
+      risk_score: riskScore,
+      label:      label,
+      risk_level: riskLevel,
       confidence: 0.94
     },
     hardware_live: true
   };
 
+  // Update diagnostic banner
+  updateHardwareDiagnostics(payload, data);
+
+  // Dispatch to live dashboard
   handleLiveData(payload);
 }
 
@@ -771,28 +962,41 @@ function updateKPICards(p) {
   const imu  = s.imu         || {};
 
   // Joint Temp
-  const jt = temp.joint_temp_c ?? 0;
-  setText('kv-temp', `${jt.toFixed(1)}°C`);
-  setText('kd-temp', `Ambient: ${(temp.ambient_temp_c ?? 28).toFixed(1)}°C | Δ ${(temp.temp_asymmetry ?? 0).toFixed(1)}°C`);
-  setBar('kb-temp', (jt - 30) / 10 * 100);
+  const jt = temp.joint_temp_c;
+  if (jt === null || jt === undefined || jt <= 5.0 || temp.temp_valid === false) {
+    setText('kv-temp', '--.-°C');
+    setText('kd-temp', 'DS18B20 1-Wire Not Detected (GPIO 5)');
+    setBar('kb-temp', 0);
+  } else {
+    setText('kv-temp', `${jt.toFixed(1)}°C`);
+    setText('kd-temp', `Ambient: ${(temp.ambient_temp_c ?? 28).toFixed(1)}°C | Δ ${(temp.temp_asymmetry ?? 0).toFixed(1)}°C`);
+    setBar('kb-temp', Math.max(0, Math.min(100, (jt - 30) / 10 * 100)));
+  }
 
   // Crepitus
   const cr = mic.crepitus_score ?? 0;
   setText('kv-crepitus', cr.toFixed(3));
-  setText('kd-crepitus', `Freq: ${Math.round(mic.dominant_freq_hz ?? 0)} Hz | RMS: ${(mic.audio_rms ?? 0).toFixed(3)}`);
+  setText('kd-crepitus', cr > 0.05 ? `Freq: ${Math.round(mic.dominant_freq_hz ?? 0)} Hz | RMS: ${(mic.audio_rms ?? 0).toFixed(3)}` : 'Acoustic Signal Clear · No Friction');
   setBar('kb-crep', cr * 100);
 
-  // ROM
+  // ROM / Flex Angle
   const rom = flex.flex_angle_deg ?? 0;
   setText('kv-rom', `${Math.round(rom)}°`);
-  setText('kd-rom', `Stiffness Index: ${(flex.flex_stiffness ?? 0).toFixed(2)}`);
+  setText('kd-rom', flex.flex_stiffness > 0.05 ? `Stiffness Index: ${(flex.flex_stiffness ?? 0).toFixed(2)}` : 'Normal Joint Flexion');
   setBar('kb-rom', (rom / 140) * 100);
 
-  // Gait Symmetry
-  const sym = imu.step_symmetry ?? 0;
-  setText('kv-gait', sym.toFixed(2));
-  setText('kd-gait', `Gyro ROM: ${Math.round(imu.gyro_range_deg ?? 0)}°`);
-  setBar('kb-gait', sym * 100);
+  // Gait Symmetry / Activity
+  const isMoving = imu.is_moving ?? (imu.cadence_spm > 15 || imu.gyro_range_deg > 10);
+  const sym = imu.step_symmetry ?? 1.0;
+  if (!isMoving) {
+    setText('kv-gait', 'At Rest');
+    setText('kd-gait', `Stationary · ROM: ${Math.round(imu.gyro_range_deg ?? 0)}°`);
+    setBar('kb-gait', 100);
+  } else {
+    setText('kv-gait', sym.toFixed(2));
+    setText('kd-gait', `Cadence: ${Math.round(imu.cadence_spm ?? 0)} spm · ROM: ${Math.round(imu.gyro_range_deg ?? 0)}°`);
+    setBar('kb-gait', sym * 100);
+  }
 
   // Session Stats
   setText('kv-count', state.sessionCount);
@@ -811,45 +1015,62 @@ function updateSeniorCard(p) {
   const imu  = s.imu         || {};
   const inf  = p.inference   || {};
 
-  const jt = temp.joint_temp_c ?? 33.5;
+  const jt = temp.joint_temp_c;
   const cr = mic.crepitus_score ?? 0;
-  const rom = flex.flex_angle_deg ?? 110;
-  const sym = imu.step_symmetry ?? 0.92;
-  const risk = inf.risk_score !== undefined ? inf.risk_score : 0.15;
+  const rom = flex.flex_angle_deg ?? 0;
+  const sym = imu.step_symmetry ?? 1.0;
+  const risk = inf.risk_score !== undefined ? inf.risk_score : 0.08;
+  const isMoving = imu.is_moving ?? (imu.cadence_spm > 15 || imu.gyro_range_deg > 10);
 
   // 1. Vitals
   setText('senior-vital-bend', `${Math.round(rom)}°`);
   const bendTag = document.getElementById('senior-vital-bend-tag');
   if (bendTag) {
     if (rom >= 90) { bendTag.textContent = 'Good Range'; bendTag.className = 'senior-vital-tag good'; }
-    else if (rom >= 70) { bendTag.textContent = 'Mild Stiffness'; bendTag.className = 'senior-vital-tag warn'; }
-    else { bendTag.textContent = 'Restricted'; bendTag.className = 'senior-vital-tag alert'; }
+    else if (rom >= 60) { bendTag.textContent = 'Mild Stiffness'; bendTag.className = 'senior-vital-tag warn'; }
+    else { bendTag.textContent = rom === 0 ? 'Straight / 0°' : 'Restricted'; bendTag.className = rom === 0 ? 'senior-vital-tag good' : 'senior-vital-tag alert'; }
   }
 
-  setText('senior-vital-balance', `${Math.round(sym * 100)}%`);
   const balTag = document.getElementById('senior-vital-bal-tag');
-  if (balTag) {
-    if (sym >= 0.85) { balTag.textContent = 'Steady Gait'; balTag.className = 'senior-vital-tag good'; }
-    else if (sym >= 0.70) { balTag.textContent = 'Slight Limp'; balTag.className = 'senior-vital-tag warn'; }
-    else { balTag.textContent = 'Uneven Walking'; balTag.className = 'senior-vital-tag alert'; }
+  if (!isMoving) {
+    setText('senior-vital-balance', 'At Rest');
+    if (balTag) {
+      balTag.textContent = 'Stationary';
+      balTag.className = 'senior-vital-tag good';
+    }
+  } else {
+    setText('senior-vital-balance', `${Math.round(sym * 100)}%`);
+    if (balTag) {
+      if (sym >= 0.85) { balTag.textContent = 'Steady Gait'; balTag.className = 'senior-vital-tag good'; }
+      else if (sym >= 0.70) { balTag.textContent = 'Slight Limp'; balTag.className = 'senior-vital-tag warn'; }
+      else { balTag.textContent = 'Uneven Walking'; balTag.className = 'senior-vital-tag alert'; }
+    }
   }
 
-  setText('senior-vital-temp', `${jt.toFixed(1)}°C`);
   const tempTag = document.getElementById('senior-vital-temp-tag');
-  if (tempTag) {
-    if (jt <= 35.5) { tempTag.textContent = 'Normal Warmth'; tempTag.className = 'senior-vital-tag good'; }
-    else if (jt <= 36.8) { tempTag.textContent = 'Mild Inflammation'; tempTag.className = 'senior-vital-tag warn'; }
-    else { tempTag.textContent = 'Inflamed Joint'; tempTag.className = 'senior-vital-tag alert'; }
+  if (jt === null || jt === undefined || jt <= 5.0 || temp.temp_valid === false) {
+    setText('senior-vital-temp', '--.-°C');
+    if (tempTag) {
+      tempTag.textContent = 'Sensor Disconnected';
+      tempTag.className = 'senior-vital-tag warn';
+    }
+  } else {
+    setText('senior-vital-temp', `${jt.toFixed(1)}°C`);
+    if (tempTag) {
+      if (jt <= 35.5) { tempTag.textContent = 'Normal Warmth'; tempTag.className = 'senior-vital-tag good'; }
+      else if (jt <= 36.8) { tempTag.textContent = 'Mild Warmth'; tempTag.className = 'senior-vital-tag warn'; }
+      else { tempTag.textContent = 'Inflamed Joint'; tempTag.className = 'senior-vital-tag alert'; }
+    }
   }
 
   const soundEl = document.getElementById('senior-vital-sound');
   const soundTag = document.getElementById('senior-vital-sound-tag');
   if (soundEl && soundTag) {
-    if (cr < 0.25) {
-      soundEl.textContent = 'Quiet';
-      soundTag.textContent = 'Smooth Joint';
+    if (cr < 0.20) {
+      soundEl.textContent = 'Clear';
+      soundTag.textContent = 'No Crepitus';
       soundTag.className = 'senior-vital-tag good';
-    } else if (cr < 0.60) {
+    } else if (cr < 0.50) {
       soundEl.textContent = 'Clicking';
       soundTag.textContent = 'Mild Crepitus';
       soundTag.className = 'senior-vital-tag warn';
@@ -869,15 +1090,17 @@ function updateSeniorCard(p) {
     if (risk < 0.35) {
       pill.className = 'senior-status-pill';
       pillText.textContent = `Low Risk (${Math.round(risk * 100)}%) — Good Condition`;
-      summary.innerHTML = `✅ <strong>Your knee joint is functioning well.</strong> Walking smoothness is steady (${Math.round(sym*100)}%), temperature is normal (${jt.toFixed(1)}°C), and knee bend is natural. Continue gentle daily walking to keep joints healthy!`;
+      const tempDesc = (jt !== null && jt > 10) ? `temperature is normal (${jt.toFixed(1)}°C)` : 'thermal sensor offline';
+      summary.innerHTML = `✅ <strong>Your knee joint is functioning well.</strong> Movement is smooth, ${tempDesc}, and joint movement is clean. Continue gentle daily activity to keep joints healthy!`;
     } else if (risk < 0.65) {
       pill.className = 'senior-status-pill moderate';
       pillText.textContent = `Mild Concern (${Math.round(risk * 100)}%) — Early Signs`;
-      summary.innerHTML = `⚠️ <strong>Mild knee stiffness or crepitus detected.</strong> Your knee flexibility is slightly reduced (${Math.round(rom)}°). We recommend low-impact leg conditioning and checking your personalized diet & exercises below.`;
+      summary.innerHTML = `⚠️ <strong>Mild joint stiffness or crepitus detected.</strong> Your knee flexibility is slightly restricted (${Math.round(rom)}°). Low-impact leg conditioning and gentle knee exercises are recommended.`;
     } else {
       pill.className = 'senior-status-pill attention';
       pillText.textContent = `Attention Advised (${Math.round(risk * 100)}%) — Joint Strain`;
-      summary.innerHTML = `🚨 <strong>Knee joint strain detected.</strong> Joint warmth (${jt.toFixed(1)}°C) and gait asymmetry suggest active knee inflammation. Please download your Doctor Report (PDF) below and consult your orthopedic specialist.`;
+      const tempDesc = (jt !== null && jt > 10) ? `Joint warmth (${jt.toFixed(1)}°C)` : 'Joint telemetry';
+      summary.innerHTML = `🚨 <strong>Knee joint strain detected.</strong> ${tempDesc} and acoustic markers suggest knee inflammation. Please download your Doctor Report (PDF) below and consult an orthopedic specialist.`;
     }
   }
 }
@@ -894,19 +1117,34 @@ function updateSensorCards(p) {
   setText('sv-freq',   `${Math.round(mic.dominant_freq_hz ?? 0)} Hz`);
   setText('sv-crep',   (mic.crepitus_score ?? 0).toFixed(3));
 
-  setText('sv-joint-t', `${(temp.joint_temp_c ?? 0).toFixed(1)} °C`);
-  setText('sv-amb-t',   `${(temp.ambient_temp_c ?? 0).toFixed(1)} °C`);
-  setText('sv-temp-d',  `${(temp.temp_asymmetry ?? 0).toFixed(2)} °C`);
+  const jt = temp.joint_temp_c;
+  if (jt !== null && jt !== undefined && jt > 5.0 && temp.temp_valid !== false) {
+    setText('sv-joint-t', `${jt.toFixed(1)} °C`);
+    setText('sv-amb-t',   `${(temp.ambient_temp_c ?? 28).toFixed(1)} °C`);
+    setText('sv-temp-d',  `${(temp.temp_asymmetry ?? 0).toFixed(2)} °C`);
+    setText('ss-temp',    '● Active (1-Wire)');
+  } else {
+    setText('sv-joint-t', '--.- °C');
+    setText('sv-amb-t',   '--.- °C');
+    setText('sv-temp-d',  '--.- °C');
+    setText('ss-temp',    '○ Not Detected');
+  }
 
   setText('sv-ax',   (imu.accel_rms_x ?? 0).toFixed(2));
   setText('sv-gy',   `${Math.round(imu.gyro_range_deg ?? 0)}°`);
-  setText('sv-sym',  (imu.step_symmetry ?? 0).toFixed(2));
+  setText('sv-sym',  imu.is_moving ? (imu.step_symmetry ?? 1).toFixed(2) : 'Rest');
+  setText('ss-imu',  imu.imu_ok ? '● Dual Pods Synced' : '○ Check Pods');
 
   setText('sv-angle', `${Math.round(flex.flex_angle_deg ?? 0)}°`);
   setText('sv-stiff', (flex.flex_stiffness ?? 0).toFixed(2));
   setText('sv-rom2',  `${Math.round(flex.flex_angle_deg ?? 0)}°`);
+  setText('ss-flex',  flex.flex_calibrated ? '● Calibrated' : '○ Uncalibrated');
 
   setText('sv-samples', state.sessionCount);
+  setText('sv-mode',    state.bleDevice ? 'BLE Active' : (state.serialPort ? 'USB Serial' : 'Disconnected'));
+  setText('sv-rate',    p.battery_pct ? `${p.battery_pct}%` : 'USB');
+  setText('ss-esp',     '● Streaming Live');
+  setText('ss-mic',     mic.mic_ok ? '● Active' : '○ Silent');
 }
 
 // ── GAUGE (CANVAS DRAWING) ─────────────────────────────────────
@@ -1251,90 +1489,7 @@ function appendLogRow(p) {
   }
 }
 
-// ── SIMULATION / DEMO STREAM ───────────────────────────────────
-function toggleDemo() {
-  if (state.demoRunning) {
-    stopDemo();
-  } else {
-    startDemo();
-  }
-}
-
-function startDemo() {
-  state.demoRunning = true;
-  const btn = document.getElementById('demo-btn');
-  if (btn) {
-    btn.innerHTML = '<span class="btn-icon">⏹</span> Stop Demo';
-    btn.classList.add('active');
-  }
-
-  setModePill('DEMO STREAM');
-
-  // Try backend demo first
-  fetch(`${SERVER_URL}/api/demo/start`, { method: 'POST' })
-    .catch(() => console.info('[DEMO] Using browser-side simulation'));
-
-  // Run local simulation stream at 1Hz
-  if (!state.demoInterval) {
-    state.demoInterval = setInterval(() => {
-      const mode = Math.random() > 0.45 ? 'oa' : 'normal';
-      const sample = generateMockSample(mode);
-      handleLiveData(sample);
-    }, 1000);
-  }
-}
-
-function stopDemo() {
-  state.demoRunning = false;
-  const btn = document.getElementById('demo-btn');
-  if (btn) {
-    btn.innerHTML = '<span class="btn-icon">▶</span> Live Simulation';
-    btn.classList.remove('active');
-  }
-
-  setModePill('DEMO STREAM');
-
-  fetch(`${SERVER_URL}/api/demo/stop`, { method: 'POST' }).catch(() => {});
-  if (state.demoInterval) {
-    clearInterval(state.demoInterval);
-    state.demoInterval = null;
-  }
-}
-
-function generateMockSample(mode) {
-  const isOA = mode === 'oa';
-  const r = (mean, std) => Math.max(0, mean + (Math.random() - 0.5) * 2 * std);
-
-  const audio_rms        = isOA ? r(0.10, 0.03)  : r(0.018, 0.005);
-  const dominant_freq_hz = isOA ? r(520, 100)    : r(150, 30);
-  const crepitus_score   = isOA ? r(0.68, 0.15)  : r(0.05, 0.03);
-  const joint_temp_c     = isOA ? r(36.3, 0.6)   : r(33.2, 0.4);
-  const temp_asymmetry   = isOA ? r(1.4, 0.4)    : r(0.1, 0.06);
-  const gyro_range_deg   = isOA ? r(50, 15)      : r(105, 12);
-  const step_symmetry    = isOA ? r(0.60, 0.10)  : r(0.92, 0.04);
-  const flex_angle_deg   = isOA ? r(52, 14)      : r(112, 10);
-  const flex_stiffness   = isOA ? r(0.70, 0.12)  : r(0.12, 0.05);
-
-  const riskScore = isOA ? 0.70 + Math.random() * 0.28 : 0.05 + Math.random() * 0.20;
-  const riskLevel = riskScore > 0.80 ? 'CRITICAL' : riskScore > 0.60 ? 'HIGH' : riskScore > 0.30 ? 'MODERATE' : 'LOW';
-
-  return {
-    patient_id: getSelectedPatient(),
-    timestamp: new Date().toISOString(),
-    sensors: {
-      microphone:  { audio_rms, dominant_freq_hz, crepitus_score },
-      temperature: { joint_temp_c, ambient_temp_c: 28.0, temp_asymmetry },
-      imu:         { accel_rms_x: 0.8, gyro_range_deg, step_symmetry },
-      flex:        { flex_angle_deg, flex_stiffness }
-    },
-    inference: {
-      risk_score: riskScore,
-      label: isOA ? 'Early_OA' : 'Normal',
-      risk_level: riskLevel,
-      confidence: 0.92 + Math.random() * 0.07,
-    }
-  };
-}
+// ── LIVE TELEMETRY LOG ─────────────────────────────────────────
 
 // ── UTILITY HELPERS ────────────────────────────────────────────
 function setText(id, text) {
@@ -1802,9 +1957,6 @@ function initSpectrogramIfNeeded() {
     resizeSpectrogramCanvas();
     window.addEventListener('resize', resizeSpectrogramCanvas);
     initFFTBarChart();
-  }
-  if (!specState.micActive && !specState.simActive) {
-    toggleSimulatedSpectrogram();
   }
 }
 
@@ -2588,20 +2740,15 @@ window.addEventListener('DOMContentLoaded', () => {
     flex:        { flex_angle_deg: 0, flex_stiffness: 0 }
   }});
 
-  // Auto-start simulation after 1.5s ONLY if no live hardware/socket feed
-  setTimeout(() => {
-    const hasHardware = state.bleDevice || state.serialPort;
-    const hasSocket = state.socket && state.socket.connected;
-    if (!state.lastReading && !hasHardware && !hasSocket) {
-      startDemo();
-    }
-  }, 1500);
+  // Initial state: Awaiting live hardware connection
+  setModePill('AWAITING DEVICE');
+  updateHardwareDiagnostics(null);
 
-  console.log('[APP] OA Detect 3D v2.0 initialized with Feature Expansion Modules');
+  console.log('[APP] JointSense OsteoBelt — Pure Live Hardware Mode Active');
 });
 
 // Expose handlers globally
-window.toggleDemo                 = toggleDemo;
+window.zeroKneeCalibration        = zeroKneeCalibration;
 window.setModePill                = setModePill;
 window.switchChart                = switchChart;
 window.clearLog                   = clearLog;

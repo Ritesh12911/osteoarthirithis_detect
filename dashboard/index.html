@@ -74,7 +74,7 @@
         </svg>
         ESP32-S3 N16R8
       </div>
-      <div class="status-pill" id="mode-pill">DEMO STREAM</div>
+      <div class="status-pill" id="mode-pill">AWAITING DEVICE</div>
       <button class="status-pill" id="pwa-install-btn" style="cursor:pointer;background:linear-gradient(135deg, rgba(34,211,238,0.25), rgba(167,139,250,0.25));border:1px solid rgba(34,211,238,0.5);color:#38bdf8;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:all 0.2s;" title="Install JointSense as Mobile App">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
         Install App
@@ -135,8 +135,8 @@
     <!-- Action Buttons -->
     <div class="sidebar-section">
       <div class="sidebar-section-label">Actions</div>
-      <button class="sidebar-action-btn demo-btn" id="demo-btn" onclick="toggleDemo()">
-        <span class="btn-icon">▶</span> Live Simulation
+      <button class="sidebar-action-btn cal-btn" id="sidebar-zero-btn" onclick="zeroKneeCalibration()" title="Zero Knee Angle with leg straight">
+        <span class="btn-icon">⚖️</span> Zero Knee Angle
       </button>
       <button class="sidebar-action-btn report-btn" id="report-btn" onclick="generateReport()" title="Export PDF Clinical Report">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
@@ -186,6 +186,89 @@
        ═══════════════════════════════════════════════════════════════════ -->
   <main class="main tab-content active" id="tab-monitor">
 
+    <!-- ── HARDWARE READINESS & SENSOR VERIFICATION BANNER ────────────── -->
+    <section class="glass-card hw-diag-banner" id="hw-diag-banner">
+      <div class="hw-diag-header">
+        <div class="hw-diag-title-wrap">
+          <span class="hw-diag-dot" id="diag-status-dot"></span>
+          <div>
+            <h3 class="hw-diag-title" id="diag-title">Device Disconnected — Awaiting Hardware</h3>
+            <p class="hw-diag-sub" id="diag-sub">Connect your OsteoBelt brace via Bluetooth LE or USB Serial to begin live testing.</p>
+          </div>
+        </div>
+        <div class="hw-diag-actions" id="diag-actions">
+          <button class="diag-btn primary" id="diag-btn-ble" onclick="connectWebBluetooth()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
+            Connect Bluetooth (BLE)
+          </button>
+          <button class="diag-btn secondary" id="diag-btn-serial" onclick="connectWebSerial()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Connect USB Serial
+          </button>
+          <button class="diag-btn cal-btn" id="diag-btn-zero" onclick="zeroKneeCalibration()" style="display:none" title="Calibrate straight leg to 0°">
+            ⚖️ Zero Angle
+          </button>
+        </div>
+      </div>
+
+      <!-- Sensor Functional Status Grid -->
+      <div class="hw-sensor-checklist" id="hw-sensor-checklist">
+        <div class="hw-check-chip" id="chk-conn">
+          <span class="chk-icon">🔌</span>
+          <div class="chk-info">
+            <span class="chk-label">Connection</span>
+            <strong class="chk-val" id="chk-conn-val">Disconnected</strong>
+          </div>
+          <span class="chk-badge warn" id="chk-conn-badge">Offline</span>
+        </div>
+
+        <div class="hw-check-chip" id="chk-mic">
+          <span class="chk-icon">🎙️</span>
+          <div class="chk-info">
+            <span class="chk-label">Acoustic (INMP441)</span>
+            <strong class="chk-val" id="chk-mic-val">Waiting...</strong>
+          </div>
+          <span class="chk-badge" id="chk-mic-badge">--</span>
+        </div>
+
+        <div class="hw-check-chip" id="chk-temp">
+          <span class="chk-icon">🌡️</span>
+          <div class="chk-info">
+            <span class="chk-label">Temp (DS18B20)</span>
+            <strong class="chk-val" id="chk-temp-val">Waiting...</strong>
+          </div>
+          <span class="chk-badge" id="chk-temp-badge">--</span>
+        </div>
+
+        <div class="hw-check-chip" id="chk-imu">
+          <span class="chk-icon">📐</span>
+          <div class="chk-info">
+            <span class="chk-label">Motion (Dual IMU)</span>
+            <strong class="chk-val" id="chk-imu-val">Waiting...</strong>
+          </div>
+          <span class="chk-badge" id="chk-imu-badge">--</span>
+        </div>
+
+        <div class="hw-check-chip" id="chk-flex">
+          <span class="chk-icon">🦵</span>
+          <div class="chk-info">
+            <span class="chk-label">Flex Goniometer</span>
+            <strong class="chk-val" id="chk-flex-val">Waiting...</strong>
+          </div>
+          <span class="chk-badge" id="chk-flex-badge">--</span>
+        </div>
+
+        <div class="hw-check-chip" id="chk-bat">
+          <span class="chk-icon">🔋</span>
+          <div class="chk-info">
+            <span class="chk-label">Battery Power</span>
+            <strong class="chk-val" id="chk-bat-val">Waiting...</strong>
+          </div>
+          <span class="chk-badge" id="chk-bat-badge">--</span>
+        </div>
+      </div>
+    </section>
+
     <!-- ── SENIOR CITIZEN EASY VIEW SUMMARY (50+ PATIENT CARD) ────────── -->
     <section class="senior-patient-card glass-card" id="senior-health-card">
       <div class="senior-card-header">
@@ -198,38 +281,38 @@
         </div>
         <div class="senior-status-pill" id="senior-status-pill">
           <span class="senior-dot" id="senior-status-dot"></span>
-          <span id="senior-status-text">Good Joint Health</span>
+          <span id="senior-status-text">Awaiting Hardware</span>
         </div>
       </div>
 
       <div class="senior-plain-summary" id="senior-plain-summary">
-        Your knee movement is smooth and joint temperature is healthy. No significant knee joint degradation detected.
+        Awaiting live telemetry from OsteoBelt sensor brace. Connect via Bluetooth or USB to begin screening.
       </div>
 
       <div class="senior-vitals-grid">
         <div class="senior-vital-box">
           <span class="senior-vital-icon">🦵</span>
           <span class="senior-vital-name">Knee Flexibility</span>
-          <span class="senior-vital-val" id="senior-vital-bend">115°</span>
-          <span class="senior-vital-tag good" id="senior-vital-bend-tag">Good Range</span>
+          <span class="senior-vital-val" id="senior-vital-bend">--°</span>
+          <span class="senior-vital-tag" id="senior-vital-bend-tag">Awaiting Signal</span>
         </div>
         <div class="senior-vital-box">
           <span class="senior-vital-icon">🚶</span>
           <span class="senior-vital-name">Walking Balance</span>
-          <span class="senior-vital-val" id="senior-vital-balance">94%</span>
-          <span class="senior-vital-tag good" id="senior-vital-bal-tag">Steady Gait</span>
+          <span class="senior-vital-val" id="senior-vital-balance">--</span>
+          <span class="senior-vital-tag" id="senior-vital-bal-tag">Awaiting Signal</span>
         </div>
         <div class="senior-vital-box">
           <span class="senior-vital-icon">🌡️</span>
           <span class="senior-vital-name">Joint Warmth</span>
-          <span class="senior-vital-val" id="senior-vital-temp">33.5°C</span>
-          <span class="senior-vital-tag good" id="senior-vital-temp-tag">Normal Temp</span>
+          <span class="senior-vital-val" id="senior-vital-temp">--.-°C</span>
+          <span class="senior-vital-tag" id="senior-vital-temp-tag">Awaiting Signal</span>
         </div>
         <div class="senior-vital-box">
           <span class="senior-vital-icon">🔊</span>
           <span class="senior-vital-name">Joint Sound</span>
-          <span class="senior-vital-val" id="senior-vital-sound">Clear</span>
-          <span class="senior-vital-tag good" id="senior-vital-sound-tag">No Crepitus</span>
+          <span class="senior-vital-val" id="senior-vital-sound">--</span>
+          <span class="senior-vital-tag" id="senior-vital-sound-tag">Awaiting Signal</span>
         </div>
       </div>
 
@@ -240,8 +323,8 @@
         <button class="senior-action-btn secondary" onclick="switchTab('ai')">
           <span>🏃</span> View Knee Exercises
         </button>
-        <button class="senior-action-btn accent" onclick="toggleDemo()">
-          <span id="senior-demo-icon">▶</span> <span id="senior-demo-text">Simulate Live Test</span>
+        <button class="senior-action-btn accent" onclick="connectWebBluetooth()" id="senior-connect-btn">
+          <span>📡</span> <span id="senior-connect-text">Connect OsteoBelt</span>
         </button>
       </div>
     </section>
@@ -420,29 +503,29 @@
           <div class="sv-item"><span>Freq</span><strong id="sv-freq">-- Hz</strong></div>
           <div class="sv-item"><span>Crep.</span><strong id="sv-crep">--</strong></div>
         </div>
-        <div class="sensor-status" id="ss-mic">●&nbsp;Connected</div>
+        <div class="sensor-status" id="ss-mic">○&nbsp;Waiting for device...</div>
       </div>
       <div class="glass-card sensor-card temp-sensor-card">
         <div class="sensor-icon">🌡️</div>
-        <div class="sensor-name">MLX90614 IR Temp</div>
-        <div class="sensor-detail">I2C Interface · GPIO 8/9</div>
+        <div class="sensor-name">DS18B20 Skin Temp</div>
+        <div class="sensor-detail">1-Wire Interface · GPIO 5</div>
         <div class="sensor-values">
           <div class="sv-item"><span>Joint</span><strong id="sv-joint-t">-- °C</strong></div>
           <div class="sv-item"><span>Ambient</span><strong id="sv-amb-t">-- °C</strong></div>
           <div class="sv-item"><span>Δ Temp</span><strong id="sv-temp-d">-- °C</strong></div>
         </div>
-        <div class="sensor-status" id="ss-temp">●&nbsp;Connected</div>
+        <div class="sensor-status" id="ss-temp">○&nbsp;Waiting for device...</div>
       </div>
       <div class="glass-card sensor-card imu-card">
         <div class="sensor-icon">📐</div>
-        <div class="sensor-name">MPU6050 IMU</div>
-        <div class="sensor-detail">I2C · GPIO 8/9 · 6-Axis</div>
+        <div class="sensor-name">Dual MPU6050 IMU</div>
+        <div class="sensor-detail">I2C · GPIO 8/9 · Thigh/Shank</div>
         <div class="sensor-values">
           <div class="sv-item"><span>AccX</span><strong id="sv-ax">--</strong></div>
           <div class="sv-item"><span>Gyro°</span><strong id="sv-gy">--</strong></div>
           <div class="sv-item"><span>Symm.</span><strong id="sv-sym">--</strong></div>
         </div>
-        <div class="sensor-status" id="ss-imu">●&nbsp;Connected</div>
+        <div class="sensor-status" id="ss-imu">○&nbsp;Waiting for device...</div>
       </div>
       <div class="glass-card sensor-card flex-card">
         <div class="sensor-icon">🦵</div>
@@ -453,18 +536,18 @@
           <div class="sv-item"><span>Stiff.</span><strong id="sv-stiff">--</strong></div>
           <div class="sv-item"><span>ROM</span><strong id="sv-rom2">--</strong></div>
         </div>
-        <div class="sensor-status" id="ss-flex">●&nbsp;Connected</div>
+        <div class="sensor-status" id="ss-flex">○&nbsp;Waiting for device...</div>
       </div>
       <div class="glass-card sensor-card esp-card">
         <div class="sensor-icon">🔌</div>
-        <div class="sensor-name">ESP32-S3 N16R8</div>
+        <div class="sensor-name">ESP32-S3 OsteoBelt</div>
         <div class="sensor-detail">WiFi 802.11b/g/n · BLE 5.0</div>
         <div class="sensor-values">
-          <div class="sv-item"><span>Bus</span><strong id="sv-mode">WiFi/BLE</strong></div>
+          <div class="sv-item"><span>Bus</span><strong id="sv-mode">Offline</strong></div>
           <div class="sv-item"><span>Samples</span><strong id="sv-samples">0</strong></div>
-          <div class="sv-item"><span>Rate</span><strong id="sv-rate">2 Hz</strong></div>
+          <div class="sv-item"><span>Battery</span><strong id="sv-rate">--%</strong></div>
         </div>
-        <div class="sensor-status" id="ss-esp">●&nbsp;Stream Active</div>
+        <div class="sensor-status" id="ss-esp">○&nbsp;Offline</div>
       </div>
     </section>
 

@@ -618,58 +618,23 @@ def simulate():
         return resp.data, resp.status_code, resp.headers
 
 
-# ─── DEMO MODE ────────────────────────────────────────────────────────────────
+# ─── DEMO MODE (DISABLED — PRODUCTION PURE LIVE HARDWARE ONLY) ────────────────
 _demo_mode   = False
 _demo_thread = None
 
 
 def _demo_loop():
-    print("[DEMO] Demo mode started — simulating sensor data every 1s")
-    patients = ["PATIENT_001", "PATIENT_002"]
-    modes    = ["normal", "normal", "normal", "oa", "oa"]
-    while _demo_mode:
-        for patient in patients:
-            mode = random.choice(modes)
-            data = _generate_oa_sample(patient) if mode == "oa" else _generate_normal_sample(patient)
-            result = inf.predict(data)
-            db.insert_session(data, result)
-            payload = {
-                "patient_id":  patient,
-                "timestamp":   datetime.utcnow().isoformat() + "Z",
-                "sensors": {
-                    "microphone":  {"audio_rms": data["audio_rms"],
-                                    "dominant_freq_hz": data["dominant_freq_hz"],
-                                    "crepitus_score": data["crepitus_score"]},
-                    "temperature": {"joint_temp_c": data["joint_temp_c"],
-                                    "temp_asymmetry": data["temp_asymmetry"],
-                                    "ambient_temp_c": data.get("ambient_temp_c", 28.0)},
-                    "imu":         {"gyro_range_deg": data["gyro_range_deg"],
-                                    "step_symmetry":  data["step_symmetry"],
-                                    "accel_rms_x":    data.get("accel_rms_x", 0)},
-                    "flex":        {"flex_angle_deg": data["flex_angle_deg"],
-                                    "flex_stiffness": data["flex_stiffness"]}
-                },
-                "inference": result,
-                "demo": True,
-            }
-            socketio.emit("live_data", payload)
-        time.sleep(1.0)
+    pass
 
 
 @app.route("/api/demo/start", methods=["POST"])
 def start_demo():
-    global _demo_mode, _demo_thread
-    _demo_mode   = True
-    _demo_thread = threading.Thread(target=_demo_loop, daemon=True)
-    _demo_thread.start()
-    return jsonify({"status": "ok", "message": "Demo mode started"})
+    return jsonify({"status": "disabled", "message": "Demo mode is disabled — live hardware stream only"}), 200
 
 
 @app.route("/api/demo/stop", methods=["POST"])
 def stop_demo():
-    global _demo_mode
-    _demo_mode = False
-    return jsonify({"status": "ok", "message": "Demo mode stopped"})
+    return jsonify({"status": "ok", "message": "Demo mode stopped"}), 200
 
 
 # ─── SAMPLE GENERATORS ────────────────────────────────────────────────────────

@@ -2181,3 +2181,167 @@ body {
   }
 }
 
+/* ── HARDWARE DIAGNOSTICS & SENSOR READINESS BANNER ── */
+.hw-diag-banner {
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(8, 14, 28, 0.9));
+  border-radius: 14px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+.hw-diag-banner.ready {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: linear-gradient(135deg, rgba(6, 44, 33, 0.7), rgba(8, 28, 22, 0.85));
+}
+.hw-diag-banner.warning {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: linear-gradient(135deg, rgba(40, 25, 10, 0.7), rgba(20, 15, 5, 0.85));
+}
+.hw-diag-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.hw-diag-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hw-diag-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f43f5e;
+  box-shadow: 0 0 10px #f43f5e;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+.hw-diag-dot.connecting {
+  background: #f59e0b;
+  box-shadow: 0 0 10px #f59e0b;
+  animation: pulse 1s infinite alternate;
+}
+.hw-diag-dot.ready {
+  background: #10b981;
+  box-shadow: 0 0 12px #10b981;
+}
+.hw-diag-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0;
+}
+.hw-diag-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 3px 0 0 0;
+}
+.hw-diag-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.diag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+.diag-btn.primary {
+  background: linear-gradient(135deg, #06b6d4, #0284c7);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+.diag-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.45);
+}
+.diag-btn.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.diag-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+.diag-btn.cal-btn {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.hw-sensor-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.hw-check-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+.hw-check-chip.ok {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.hw-check-chip.warn {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+.chk-icon {
+  font-size: 18px;
+}
+.chk-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+.chk-label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chk-val {
+  font-size: 12px;
+  color: #e2e8f0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chk-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+}
+.chk-badge.ok {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+.chk-badge.warn {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+
