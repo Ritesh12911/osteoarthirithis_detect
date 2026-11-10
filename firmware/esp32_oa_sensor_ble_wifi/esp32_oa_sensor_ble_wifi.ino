@@ -159,6 +159,8 @@ static inline float wrap180(float a) { while (a > 180.0f) a -= 360.0f; while (a 
 static volatile float g_motionDps = 0;        // knee motion speed -> audio gate
 static volatile float g_risk = -1.0f;         // last backend risk score (0..1)
 static char g_label[20] = "";
+static float flexOhmEma = 0;
+static float flexBaseOhm = 12000.0f;
 
 // ------------------------------- NVS ----------------------------------------
 static void nvsPutStr(const char *k, const String &v) { prefs.begin("oa", false); prefs.putString(k, v); prefs.end(); }
@@ -348,8 +350,6 @@ static bool isMoving() { return lastSwingMs != 0 && (millis() - lastSwingMs) < 3
 // ================================ FLEX SENSOR ================================
 struct FlexCal { uint8_t n; float deg[MAX_CAL]; float ohm[MAX_CAL]; };
 static FlexCal flexCal = {0, {0}, {0}};
-static float flexOhmEma = 0;
-static float flexBaseOhm = 12000.0f;
 
 static float flexReadMv() {
   uint32_t s = 0;
