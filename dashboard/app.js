@@ -590,44 +590,67 @@ async function connectWebSerial() {
     const reader = textDecoder.readable.getReader();
     state.serialReader = reader;
 
-    let buffer = '';
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += value;
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep remainder
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        // 1. Check for JSON format: { ... }
-        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-          try {
-            const parsed = JSON.parse(trimmed);
-            handleHardwarePayload(parsed);
-            continue;
-          } catch (e) {
-            console.warn('[SERIAL] JSON parse error:', e);
-          }
-        }
-
-        // 2. Check for firmware text output: [DATA] knee ... | flex ...
-        if (trimmed.includes('[DATA]') || (trimmed.includes('knee') && trimmed.includes('flex'))) {
-          const parsed = parseDataLine(trimmed);
-          if (parsed) {
-            handleHardwarePayload(parsed);
-            continue;
-          }
-        }
-      }
+      if (value) processIncomingStream(value, 'SERIAL');
     }
   } catch (err) {
     console.error('[SERIAL] Connection error:', err);
     if (err && err.message && err.message.includes('Failed to open')) {
       alert('⚠️ USB Port Busy: Please CLOSE the Arduino IDE Serial Monitor window and try again. Windows only allows one program to access COM8 at a time.');
     }
+  }
+}
+
+// ── UNIFIED STREAM BUFFER PROCESSOR (HANDLES CHUNKS, JSON & [DATA]) ─
+let rawStreamBuffer = '';
+function processIncomingStream(chunk, source = 'HW') {
+  if (!chunk) return;
+  rawStreamBuffer += chunk;
+
+  // 1. Check for complete JSON objects: { ... }
+  let startIdx, endIdx;
+  while ((startIdx = rawStreamBuffer.indexOf('{')) !== -1 && (endIdx = rawStreamBuffer.indexOf('}', startIdx)) !== -1) {
+    const jsonStr = rawStreamBuffer.substring(startIdx, endIdx + 1);
+    try {
+      const parsed = JSON.parse(jsonStr);
+      rawStreamBuffer = rawStreamBuffer.substring(endIdx + 1);
+      if (parsed && parsed.status !== 'waiting') {
+        handleHardwarePayload(parsed);
+      }
+    } catch (e) {
+      rawStreamBuffer = rawStreamBuffer.substring(startIdx + 1);
+    }
+  }
+
+  // 2. Check for [DATA] formatted lines
+  let dataMatch;
+  while ((dataMatch = rawStreamBuffer.match(/\[DATA\][^\r\n]+/))) {
+    const line = dataMatch[0];
+    const parsed = parseDataLine(line);
+    rawStreamBuffer = rawStreamBuffer.substring(dataMatch.index + line.length);
+    if (parsed) {
+      handleHardwarePayload(parsed);
+    }
+  }
+
+  // 3. Fallback: line-by-line check for serial text output
+  if (rawStreamBuffer.includes('\n')) {
+    const lines = rawStreamBuffer.split('\n');
+    rawStreamBuffer = lines.pop(); // keep remainder
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.includes('knee') && trimmed.includes('flex')) {
+        const parsed = parseDataLine(trimmed);
+        if (parsed) handleHardwarePayload(parsed);
+      }
+    }
+  }
+
+  // Cap stream buffer to prevent memory bloat
+  if (rawStreamBuffer.length > 2500) {
+    rawStreamBuffer = rawStreamBuffer.substring(rawStreamBuffer.length - 600);
   }
 }
 
@@ -652,9 +675,14 @@ async function connectWebBluetooth() {
     device.addEventListener('gattserverdisconnected', () => {
       const btn = document.getElementById('btn-web-ble');
       if (btn) { btn.classList.remove('active'); btn.innerHTML = '⬡ BLE Connect'; }
+      if (state.blePollTimer) {
+        clearInterval(state.blePollTimer);
+        state.blePollTimer = null;
+      }
       state.hwConnected = false;
       state.bleDevice = null;
       state.bleServer = null;
+      state.bleSensorChar = null;
       setDeviceStatus(false);
       setConnStatus('error', 'BLE Disconnected');
       setModePill('AWAITING DEVICE');
@@ -665,48 +693,41 @@ async function connectWebBluetooth() {
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService('12345678-1234-5678-1234-56789abcdef0');
 
-    // Sensor data: characteristic ..def1 (NOTIFY — live JSON telemetry)
+    // Sensor data: characteristic ..def1 (NOTIFY + READ)
     const sensorChar = await service.getCharacteristic('12345678-1234-5678-1234-56789abcdef1');
-    await sensorChar.startNotifications();
+    try {
+      await sensorChar.startNotifications();
+      sensorChar.addEventListener('characteristicvaluechanged', (event) => {
+        const chunk = new TextDecoder().decode(event.target.value);
+        if (chunk) processIncomingStream(chunk, 'BLE_NOTIFY');
+      });
+    } catch (notifErr) {
+      console.warn('[BLE] Notification subscribe notice (will use GATT Read polling):', notifErr);
+    }
 
-    let bleStreamBuffer = '';
-    sensorChar.addEventListener('characteristicvaluechanged', (event) => {
-      const chunk = new TextDecoder().decode(event.target.value);
-      bleStreamBuffer += chunk;
-
-      // 1. Try single complete JSON or extract { ... } from accumulated stream
-      const startIdx = bleStreamBuffer.indexOf('{');
-      const endIdx   = bleStreamBuffer.lastIndexOf('}');
-      if (startIdx !== -1 && endIdx > startIdx) {
-        const jsonStr = bleStreamBuffer.substring(startIdx, endIdx + 1);
-        try {
-          const parsed = JSON.parse(jsonStr);
-          bleStreamBuffer = bleStreamBuffer.substring(endIdx + 1);
-          if (parsed.status !== 'waiting') {
-            handleHardwarePayload(parsed);
-            return;
-          }
-        } catch (e) {
-          // Keep chunking if not full JSON yet
+    // Active GATT Read polling loop: guarantees continuous telemetry even if notifications are dropped by Windows/Chrome MTU
+    if (state.blePollTimer) clearInterval(state.blePollTimer);
+    let bleReading = false;
+    state.blePollTimer = setInterval(async () => {
+      if (!state.hwConnected || !state.bleDevice || !state.bleDevice.gatt.connected || !sensorChar) {
+        if (state.blePollTimer) clearInterval(state.blePollTimer);
+        state.blePollTimer = null;
+        return;
+      }
+      if (bleReading) return;
+      bleReading = true;
+      try {
+        const val = await sensorChar.readValue();
+        const text = new TextDecoder().decode(val);
+        if (text && text.length > 5) {
+          processIncomingStream(text, 'BLE_POLL');
         }
+      } catch (e) {
+        // Normal collision with BLE notifications
+      } finally {
+        bleReading = false;
       }
-
-      // 2. Check for [DATA] formatted line in BLE stream
-      const dataMatch = bleStreamBuffer.match(/\[DATA\][^\r\n]+/);
-      if (dataMatch) {
-        const parsed = parseDataLine(dataMatch[0]);
-        if (parsed) {
-          bleStreamBuffer = bleStreamBuffer.substring(dataMatch.index + dataMatch[0].length);
-          handleHardwarePayload(parsed);
-          return;
-        }
-      }
-
-      // Cap buffer size to avoid memory overflow
-      if (bleStreamBuffer.length > 3000) {
-        bleStreamBuffer = bleStreamBuffer.substring(bleStreamBuffer.length - 800);
-      }
-    });
+    }, 350);
 
     // Optional: FFT Spectrum Characteristic ..def3 (16-bin spectrum)
     try {
@@ -855,15 +876,17 @@ function handleHardwarePayload(data) {
   const batPct  = data.battery_pct ?? 0;
   const batV    = data.battery_v ?? 0;
 
-  // Active motion detection
-  const rom     = data.rom_deg ?? data.gyro_range_deg ?? 0;
-  const cadence = data.cadence_spm ?? 0;
-  const isMoving = (cadence > 15 || rom > 10);
+  // Active motion detection: requires physical articulating ROM >= 15 deg AND cadence >= 25 spm
+  // Sitting on a desk or static position has ROM 0-5 deg -> guaranteed AT REST
+  const rom        = data.rom_deg ?? data.gyro_range_deg ?? 0;
+  const rawCadence = data.cadence_spm ?? 0;
+  const isMoving   = (rom >= 15 && rawCadence >= 25);
+  const cadence    = isMoving ? rawCadence : 0;
 
   // Raw values from firmware
   const rawKneeAngle = data.knee_angle_deg ?? data.flex_angle_deg ?? 0;
   const flexAngle    = Math.max(0, Math.min(140, rawKneeAngle - (state.kneeZeroOffset || 0)));
-  const crepScore    = data.crepitus_score ?? 0;
+  const crepScore    = isMoving ? (data.crepitus_score ?? 0) : 0.0;
   const jointTemp    = tempOk ? data.joint_temp_c : null;
   const symmetry     = isMoving ? (data.step_symmetry ?? 0.9) : 1.0;
 
@@ -890,11 +913,50 @@ function handleHardwarePayload(data) {
     label     = 'Mild_Inflammation';
   }
 
+  // Exponential Moving Average (EMA) smoothing to eliminate erratic jumps and visual twitching
+  if (!state.smoothed) {
+    state.smoothed = {
+      flexAngle: flexAngle,
+      crepScore: crepScore,
+      riskScore: riskScore,
+      symmetry:  symmetry,
+      batPct:    batPct,
+      jointTemp: jointTemp ?? 25.0
+    };
+  } else {
+    state.smoothed.flexAngle = state.smoothed.flexAngle * 0.75 + flexAngle * 0.25;
+    state.smoothed.crepScore = state.smoothed.crepScore * 0.8 + crepScore * 0.2;
+    state.smoothed.riskScore = state.smoothed.riskScore * 0.85 + riskScore * 0.15;
+    state.smoothed.symmetry  = state.smoothed.symmetry * 0.85 + symmetry * 0.15;
+    state.smoothed.batPct    = Math.round(state.smoothed.batPct * 0.95 + batPct * 0.05);
+    if (jointTemp !== null) {
+      state.smoothed.jointTemp = state.smoothed.jointTemp * 0.9 + jointTemp * 0.1;
+    }
+  }
+
+  const smoothedFlexAngle = Math.round(state.smoothed.flexAngle);
+  const smoothedRiskScore = Number(state.smoothed.riskScore.toFixed(2));
+  const smoothedSymmetry  = Number(state.smoothed.symmetry.toFixed(2));
+
+  // Recalculate level based on smoothed risk
+  if (smoothedRiskScore >= 0.65) {
+    riskLevel = 'HIGH';
+    label     = 'Early_OA';
+  } else if (smoothedRiskScore >= 0.35) {
+    riskLevel = 'MODERATE';
+    label     = 'Mild_OA';
+  } else {
+    riskLevel = 'LOW';
+    label     = 'Normal';
+  }
+
+  const activePatientId = getSelectedPatient();
+
   const payload = {
-    patient_id: data.patient_id ?? 'PATIENT_001',
+    patient_id: activePatientId,
     timestamp: new Date().toISOString(),
     fw: data.fw ?? '3.0',
-    battery_pct: batPct,
+    battery_pct: state.smoothed.batPct,
     battery_v: batV,
     raw_knee_angle: rawKneeAngle,
     sensors: {
@@ -902,12 +964,12 @@ function handleHardwarePayload(data) {
         audio_rms:        data.audio_rms ?? 0,
         audio_dbfs:       data.audio_dbfs ?? -120,
         dominant_freq_hz: data.dominant_freq_hz ?? 0,
-        crepitus_score:   crepScore,
-        crepitus_events:  data.crepitus_events ?? 0,
+        crepitus_score:   Number(state.smoothed.crepScore.toFixed(2)),
+        crepitus_events:  isMoving ? (data.crepitus_events ?? 0) : 0,
         mic_ok:           micOk
       },
       temperature: {
-        joint_temp_c:   jointTemp,
+        joint_temp_c:   tempOk ? Number(state.smoothed.jointTemp.toFixed(1)) : null,
         ambient_temp_c: data.ambient_temp_c ?? 28.0,
         temp_asymmetry: tempOk ? (data.temp_asymmetry ?? 0) : 0,
         temp_valid:     tempOk
@@ -917,7 +979,7 @@ function handleHardwarePayload(data) {
         accel_rms_y:    data.accel_rms_y ?? 0,
         accel_rms_z:    data.accel_rms_z ?? 9.8,
         gyro_range_deg: rom,
-        step_symmetry:  symmetry,
+        step_symmetry:  smoothedSymmetry,
         cadence_spm:    cadence,
         is_moving:      isMoving,
         pitch:          data.pitch ?? 0,
@@ -926,13 +988,13 @@ function handleHardwarePayload(data) {
         imu_ok:         imuOk
       },
       flex: {
-        flex_angle_deg:  flexAngle,
+        flex_angle_deg:  smoothedFlexAngle,
         flex_stiffness:  data.flex_stiffness ?? 0,
         flex_calibrated: flexOk
       }
     },
     inference: {
-      risk_score: riskScore,
+      risk_score: smoothedRiskScore,
       label:      label,
       risk_level: riskLevel,
       confidence: 0.94
@@ -2859,6 +2921,9 @@ window.addEventListener('DOMContentLoaded', () => {
   updateHardwareDiagnostics(null);
 
   console.log('[APP] JointSense OsteoBelt — Pure Live Hardware Mode Active');
+
+  // Check for first-time visitor → show auth modal
+  checkFirstTimeUser();
 });
 
 // Expose handlers globally
@@ -2892,3 +2957,162 @@ window.clearChat                  = clearChat;
 window.loadDietPlan               = loadDietPlan;
 window.generateExercises          = generateExercises;
 window.generateReport             = generateReport;
+
+// ── AUTH / PATIENT PROFILE MODAL ─────────────────────────────────────
+const JSKEY_USER = 'jointsense_user';
+
+function checkFirstTimeUser() {
+  const stored = localStorage.getItem(JSKEY_USER);
+  if (!stored) {
+    // First visit: show modal after a small delay so the UI finishes rendering
+    setTimeout(() => openAuthModal(), 650);
+  } else {
+    try {
+      const user = JSON.parse(stored);
+      _applyUserProfile(user);
+    } catch (e) {
+      localStorage.removeItem(JSKEY_USER);
+      setTimeout(() => openAuthModal(), 650);
+    }
+  }
+}
+
+function openAuthModal() {
+  const modal = document.getElementById('auth-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeAuthModal() {
+  const modal = document.getElementById('auth-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function switchAuthTab(tab) {
+  const signupForm = document.getElementById('auth-signup-form');
+  const signinForm = document.getElementById('auth-signin-form');
+  const tabSignup  = document.getElementById('tab-btn-signup');
+  const tabSignin  = document.getElementById('tab-btn-signin');
+
+  if (!signupForm || !signinForm) return;
+
+  if (tab === 'signup') {
+    signupForm.style.display = '';
+    signinForm.style.display = 'none';
+    if (tabSignup) tabSignup.classList.add('active');
+    if (tabSignin) tabSignin.classList.remove('active');
+  } else {
+    signinForm.style.display = '';
+    signupForm.style.display = 'none';
+    if (tabSignin) tabSignin.classList.add('active');
+    if (tabSignup) tabSignup.classList.remove('active');
+  }
+}
+
+function handleSignup(e) {
+  e.preventDefault();
+  const name     = (document.getElementById('auth-su-name')?.value  || '').trim();
+  const age      = parseInt(document.getElementById('auth-su-age')?.value  || '0', 10);
+  const gender   = document.getElementById('auth-su-gender')?.value  || 'Other';
+  const side     = document.getElementById('auth-su-side')?.value    || 'Left Knee';
+  const symptoms = (document.getElementById('auth-su-symptoms')?.value || '').trim();
+  const phone    = (document.getElementById('auth-su-phone')?.value  || '').trim();
+
+  if (!name || !age) {
+    alert('Please enter your full name and age to continue.');
+    return;
+  }
+
+  const user = {
+    name, age, gender, side, symptoms, phone,
+    patient_id: `P_${name.replace(/\s+/g, '').substring(0,8).toUpperCase()}_${Date.now().toString(36).toUpperCase()}`,
+    created_at: new Date().toISOString(),
+    is_guest: false
+  };
+
+  localStorage.setItem(JSKEY_USER, JSON.stringify(user));
+  _applyUserProfile(user);
+  closeAuthModal();
+}
+
+function handleLogin(e) {
+  e.preventDefault();
+  const id  = (document.getElementById('auth-si-id')?.value || '').trim();
+  if (!id) { alert('Please enter your Patient ID or registered mobile.'); return; }
+
+  // Check localStorage for matching profile
+  const stored = localStorage.getItem(JSKEY_USER);
+  if (stored) {
+    try {
+      const user = JSON.parse(stored);
+      if (user.patient_id === id || user.phone === id || user.name === id) {
+        _applyUserProfile(user);
+        closeAuthModal();
+        return;
+      }
+    } catch (e) {}
+  }
+
+  // Fallback: treat ID as patient_id directly (clinical operator mode)
+  const user = {
+    name: id,
+    patient_id: id,
+    age: '--',
+    gender: 'Unknown',
+    side: 'Left Knee',
+    is_guest: false
+  };
+  localStorage.setItem(JSKEY_USER, JSON.stringify(user));
+  _applyUserProfile(user);
+  closeAuthModal();
+}
+
+function continueAsGuest() {
+  const user = {
+    name: 'Guest User',
+    patient_id: 'GUEST_001',
+    age: '--',
+    gender: '--',
+    side: '--',
+    is_guest: true,
+    created_at: new Date().toISOString()
+  };
+  localStorage.setItem(JSKEY_USER, JSON.stringify(user));
+  _applyUserProfile(user);
+  closeAuthModal();
+}
+
+function _applyUserProfile(user) {
+  if (!user) return;
+
+  // Update header profile pill
+  const nameEl   = document.getElementById('header-user-name');
+  const avatarEl = document.getElementById('header-user-avatar');
+  if (nameEl) nameEl.textContent = user.is_guest ? 'Guest' : (user.name || 'Profile');
+  if (avatarEl) {
+    const icon = user.is_guest ? '👤' : (user.gender === 'Female' ? '👩' : '👨');
+    avatarEl.textContent = icon;
+  }
+
+  // Update senior patient card name
+  const dispName = document.getElementById('senior-patient-display-name');
+  if (dispName && !user.is_guest) {
+    const ageStr = user.age && user.age !== '--' ? ` (Age ${user.age})` : '';
+    dispName.textContent = `${user.name}${ageStr}`;
+  }
+
+  // Update patient select dropdown if patient_id matches any option, else select first
+  const sel = document.getElementById('patient-select');
+  if (sel && user.patient_id) {
+    const opt = [...(sel.options || [])].find(o => o.value === user.patient_id);
+    if (opt) sel.value = user.patient_id;
+  }
+
+  console.log('[AUTH] Profile applied:', user.name, '—', user.patient_id);
+}
+
+window.openAuthModal    = openAuthModal;
+window.closeAuthModal   = closeAuthModal;
+window.switchAuthTab    = switchAuthTab;
+window.handleSignup     = handleSignup;
+window.handleLogin      = handleLogin;
+window.continueAsGuest  = continueAsGuest;

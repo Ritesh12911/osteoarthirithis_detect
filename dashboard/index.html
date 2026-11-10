@@ -61,7 +61,16 @@
         <span class="logo-sub">MDoNER · Early Knee Screening</span>
       </div>
     </a>
+    <div class="india-badge" title="Proudly Made in India · Indigenous Biomedical Engineering">
+      <span class="india-flag">🇮🇳</span>
+      <span class="india-text">Proudly Made in India</span>
+    </div>
     <div class="header-status-bar">
+      <button class="profile-pill" id="header-user-btn" onclick="openAuthModal()" title="View or Switch Patient Profile">
+        <span class="user-avatar-tiny" id="header-user-avatar">👤</span>
+        <span id="header-user-name">Login / Profile</span>
+      </button>
+      <div class="divider-v"></div>
       <div class="status-indicator">
         <span class="dot" id="conn-dot"></span>
         <span id="conn-text">Connecting...</span>
@@ -897,9 +906,9 @@
 
   <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
   <footer class="footer">
-    <span>MDoNER · North Eastern Region</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:#f8fafc;"><span style="font-size:15px;">🇮🇳</span> Proudly Made in India</span>
     <span class="divider-v"></span>
-    <span>JointSense · AI-Assisted Early Osteoarthritis Detection · North Eastern Region</span>
+    <span>JointSense · AI-Assisted Early Knee Osteoarthritis Screening Platform · MDoNER &amp; Ayushman Bharat</span>
     <span class="divider-v"></span>
     <span id="footer-time">—</span>
   </footer>
@@ -927,6 +936,110 @@
       <span class="mob-nav-label">PDF Report</span>
     </button>
   </nav>
+
+  <!-- ── AUTHENTICATION & PATIENT PROFILE ONBOARDING MODAL ────────────── -->
+  <div class="auth-modal-overlay" id="auth-modal" style="display:none">
+    <div class="auth-modal-card glass-card">
+      <div class="auth-tricolor-bar"></div>
+      
+      <div class="auth-header">
+        <div class="auth-brand-row">
+          <div class="auth-badge-india">
+            <span class="india-flag">🇮🇳</span>
+            <span>Proudly Made in India · Indigenous MedTech</span>
+          </div>
+          <button class="auth-close-btn" onclick="closeAuthModal()" title="Close">&times;</button>
+        </div>
+        <h2 class="auth-title" id="auth-modal-title">Welcome to JointSense</h2>
+        <p class="auth-subtitle">AI-Assisted Knee Osteoarthritis Screening · Supporting Ayushman Bharat &amp; MDoNER</p>
+      </div>
+
+      <!-- Auth Switcher Tabs -->
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="tab-btn-signup" onclick="switchAuthTab('signup')">
+          <span>✨ New Profile (Sign Up)</span>
+        </button>
+        <button class="auth-tab-btn" id="tab-btn-signin" onclick="switchAuthTab('signin')">
+          <span>🔑 Returning Patient (Login)</span>
+        </button>
+      </div>
+
+      <!-- SIGN UP FORM (Default for First-Time Visitors) -->
+      <form class="auth-form" id="auth-signup-form" onsubmit="handleSignup(event)">
+        <div class="auth-form-row">
+          <div class="auth-form-group flex-2">
+            <label class="auth-label">Full Name <span class="required">*</span></label>
+            <input type="text" class="auth-input" id="auth-su-name" placeholder="e.g. Anita Sharma" required />
+          </div>
+          <div class="auth-form-group flex-1">
+            <label class="auth-label">Age <span class="required">*</span></label>
+            <input type="number" class="auth-input" id="auth-su-age" min="10" max="115" placeholder="58" required />
+          </div>
+        </div>
+
+        <div class="auth-form-row">
+          <div class="auth-form-group flex-1">
+            <label class="auth-label">Gender</label>
+            <select class="auth-select" id="auth-su-gender">
+              <option value="Female">Female</option>
+              <option value="Male">Male</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="auth-form-group flex-1">
+            <label class="auth-label">Affected Knee</label>
+            <select class="auth-select" id="auth-su-side">
+              <option value="Left Knee">Left Knee (L)</option>
+              <option value="Right Knee">Right Knee (R)</option>
+              <option value="Bilateral">Both Knees (Bilateral)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="auth-form-group">
+          <label class="auth-label">Primary Symptoms &amp; Clinical Notes</label>
+          <input type="text" class="auth-input" id="auth-su-symptoms" placeholder="e.g. Morning joint stiffness, cracking sound on stairs, dull ache" />
+        </div>
+
+        <div class="auth-form-group">
+          <label class="auth-label">Mobile Number / ABHA ID (Optional for Report &amp; SMS)</label>
+          <input type="tel" class="auth-input" id="auth-su-phone" placeholder="e.g. +91 98765 43210 or ABHA-1234" />
+        </div>
+
+        <button type="submit" class="auth-submit-btn">
+          <span>🚀 Save Profile &amp; Launch Screening</span>
+        </button>
+      </form>
+
+      <!-- SIGN IN FORM -->
+      <form class="auth-form" id="auth-signin-form" style="display:none" onsubmit="handleLogin(event)">
+        <div class="auth-form-group">
+          <label class="auth-label">Patient ID or Registered Mobile</label>
+          <input type="text" class="auth-input" id="auth-si-id" placeholder="e.g. PATIENT_001 or +91 9876543210" required />
+        </div>
+
+        <div class="auth-form-group">
+          <label class="auth-label">Security PIN / Access Key</label>
+          <input type="password" class="auth-input" id="auth-si-pin" placeholder="Enter 4-digit PIN or leave blank for quick access" />
+        </div>
+
+        <button type="submit" class="auth-submit-btn">
+          <span>🔓 Sign In &amp; Access Records</span>
+        </button>
+      </form>
+
+      <!-- Quick Guest Action -->
+      <div class="auth-footer-actions">
+        <button type="button" class="auth-guest-btn" onclick="continueAsGuest()">
+          <span>⚡ Instant Hardware Test (Guest Mode)</span>
+        </button>
+      </div>
+
+      <div class="auth-made-in-india-ribbon">
+        <span>🇮🇳 An Indigenous MedTech Innovation · Designed &amp; Engineered in India</span>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

@@ -808,10 +808,12 @@ static void telemetryService() {
     for (uint16_t i = 0; i < romCount; i++) { lo = fminf(lo, romBuf[i]); hi = fmaxf(hi, romBuf[i]); }
     rom = hi - lo;
   }
-  bool moving = isMoving();
+  // Motion gating: device must articulate with ROM >= 15 deg to be considered walking/moving
+  bool moving = isMoving() && (rom >= 15.0f);
   if (moving && romCount >= 30) stiffness = constrain(1.0f - rom / ROM_REF_DEG, 0.0f, 1.0f);
+  else stiffness = 0.0f;
 
-  // stride statistics
+  // stride statistics (enforce 0 at rest to prevent noisy spikes)
   float cadence = 0, regularity = 0;
   if (moving && strideN >= 3) {
     float mean = 0; for (int i = 0; i < strideN; i++) mean += strideMs[i]; mean /= strideN;
@@ -829,7 +831,8 @@ static void telemetryService() {
   float disagree = (g_kneeImuValid && flexCalibrated()) ? fabsf(g_kneeImu - flexAng) : 0.0f;
   float kneeBest = g_kneeImuValid ? g_kneeImu : flexAng;
   float tAsym = isnan(jointC) ? 0.0f : fabsf(jointC - 33.0f);
-  float crep = constrain(au.events5s / 8.0f, 0.0f, 1.0f);
+  // Crepitus represents joint acoustic friction during articulation; at rest, ambient sound is filtered
+  float crep = moving ? constrain(au.events5s / 8.0f, 0.0f, 1.0f) : 0.0f;
 
 #if ARDUINOJSON_VERSION_MAJOR >= 7
   JsonDocument doc;
