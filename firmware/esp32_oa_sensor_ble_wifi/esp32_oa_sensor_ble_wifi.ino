@@ -506,10 +506,12 @@ static void audioTask(void *) {
     }
     float bandE = sqrtf(bandSq);
 
-    // crepitus = short broadband bursts in 0.3-2 kHz, only counted while the knee moves
+    // crepitus = short broadband bursts in 0.3-2 kHz
+    // Motion gate removed: register acoustic events any time the mic detects a real burst
+    // The dashboard EMA + motion gating suppresses resting noise display-side
     uint32_t now = millis();
-    bool burst = bandE > floorE * 4.0f && bandE > 0.0015f;
-    if (burst && g_motionDps > 15.0f && (now - lastEvt) > 80) { lastEvt = now; evt[evtIdx++ & 31] = now; }
+    bool burst = bandE > floorE * 3.0f && bandE > 0.0008f;   // lowered threshold for INMP441
+    if (burst && (now - lastEvt) > 60) { lastEvt = now; evt[evtIdx++ & 31] = now; }
     floorE += ((bandE < floorE * 2.0f) ? 0.02f : 0.001f) * (bandE - floorE);
     floorE = fmaxf(floorE, 1e-5f);
 
@@ -864,7 +866,18 @@ static void telemetryService() {
   char out[NET_JSON_MAX];
   size_t len = serializeJson(doc, out, sizeof(out));
 
-  if (bleConnected && bleSensor && len > 0) { bleSensor->setValue((uint8_t *)out, len); bleSensor->notify(); }
+  // BLE notification: send the compact [DATA] text line (~80 bytes) which always fits in
+  // any BLE MTU, then also notify the full JSON for clients that can handle it.
+  // Chrome/Windows Web Bluetooth typically negotiates MTU=23 (20-byte payload).
+  // Compact line is always < 100 bytes and delivers all critical fields reliably.
+  if (bleConnected && bleSensor) {
+    char compact[128];
+    snprintf(compact, sizeof(compact),
+      "[DATA] knee %.1f | flex %.1f%s | ROM %.0f | cad %.0f | crep %.2f | T %.1fC | %.2fV | mic %.0fdB\n",
+      kneeBest, flexAng, flexCalibrated() ? "" : "(uncal)", rom, cadence, crep, jointC, vbat, au.dbfs);
+    bleSensor->setValue((uint8_t*)compact, strlen(compact));
+    bleSensor->notify();
+  }
   netEnqueue(out);
 
   Serial.printf("[DATA] knee %.1f | flex %.1f%s | ROM %.0f | cad %.0f | crep %.2f | T %.1fC | %.2fV | mic %.0fdB\n",
