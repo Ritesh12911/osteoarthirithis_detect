@@ -500,12 +500,17 @@ async function connectWebSerial() {
     await port.open({ baudRate: 115200 });
     state.serialPort = port;
 
+    // ── STOP demo simulation — real hardware is now streaming ──
+    if (state.demoRunning) stopDemo();
+
     const btn = document.getElementById('btn-web-serial');
     if (btn) {
       btn.classList.add('active');
       btn.innerHTML = '<span style="color:#10b981">●</span> USB COM Active';
     }
     setDeviceStatus(true, 'USB Serial (115200 baud)');
+    setConnStatus('connected', 'USB Serial');
+    setModePill('LIVE USB');
 
     const textDecoder = new TextDecoderStream();
     port.readable.pipeTo(textDecoder.writable);
@@ -554,6 +559,7 @@ async function connectWebBluetooth() {
       if (btn) { btn.classList.remove('active'); btn.innerHTML = '⬡ BLE Connect'; }
       setDeviceStatus(false);
       setConnStatus('error', 'BLE Disconnected');
+      setModePill('DEMO STREAM');
       console.warn('[BLE] Device disconnected.');
     });
 
@@ -574,14 +580,18 @@ async function connectWebBluetooth() {
       }
     });
 
-    state.bleDevice   = device;
-    state.bleServer   = server;
+    state.bleDevice     = device;
+    state.bleServer     = server;
     state.bleSensorChar = sensorChar;
+
+    // ── STOP demo simulation — real hardware is now streaming ──
+    if (state.demoRunning) stopDemo();
 
     const btn = document.getElementById('btn-web-ble');
     if (btn) { btn.classList.add('active'); btn.innerHTML = '<span style="color:#10b981">●</span> BLE Connected'; }
     setDeviceStatus(true, 'BLE 5.0 — OA_Detector_SIH2026');
     setConnStatus('connected', 'BLE Direct');
+    setModePill('LIVE BLE');
     console.info('[BLE] Connected to OA_Detector_SIH2026. Streaming live telemetry...');
   } catch (err) {
     console.error('[BLE] Connection error:', err);
@@ -592,32 +602,32 @@ async function connectWebBluetooth() {
 function handleHardwarePayload(data) {
   // Convert flat hardware JSON into nested structure expected by dashboard
   const payload = {
-    patient_id: data.patient_id || 'PATIENT_001',
+    patient_id: data.patient_id ?? 'PATIENT_001',
     timestamp: new Date().toISOString(),
     sensors: {
       microphone: {
-        audio_rms: data.audio_rms || 0.02,
-        dominant_freq_hz: data.dominant_freq_hz || 150,
-        crepitus_score: data.crepitus_score || 0.05
+        audio_rms:        data.audio_rms        ?? 0.02,
+        dominant_freq_hz: data.dominant_freq_hz ?? 150,
+        crepitus_score:   data.crepitus_score   ?? 0.05
       },
       temperature: {
-        joint_temp_c: data.joint_temp_c || 33.2,
-        ambient_temp_c: data.ambient_temp_c || 28.0,
-        temp_asymmetry: data.temp_asymmetry || 0.1
+        joint_temp_c:   data.joint_temp_c   ?? 33.2,
+        ambient_temp_c: data.ambient_temp_c ?? 28.0,
+        temp_asymmetry: data.temp_asymmetry ?? 0.1
       },
       imu: {
-        accel_rms_x: data.accel_rms_x || 0.85,
-        accel_rms_y: data.accel_rms_y || 0.90,
-        accel_rms_z: data.accel_rms_z || 9.82,
-        gyro_range_deg: data.gyro_range_deg || 105,
-        step_symmetry: data.step_symmetry || 0.92,
-        pitch: data.pitch || 0,
-        roll:  data.roll  || 0,
-        yaw:   data.yaw   || 0
+        accel_rms_x:   data.accel_rms_x   ?? 0.85,
+        accel_rms_y:   data.accel_rms_y   ?? 0.90,
+        accel_rms_z:   data.accel_rms_z   ?? 9.82,
+        gyro_range_deg: data.gyro_range_deg ?? 105,
+        step_symmetry:  data.step_symmetry  ?? 0.92,
+        pitch: data.pitch ?? 0,
+        roll:  data.roll  ?? 0,
+        yaw:   data.yaw   ?? 0
       },
       flex: {
-        flex_angle_deg: data.flex_angle_deg || 112,
-        flex_stiffness: data.flex_stiffness || 0.12
+        flex_angle_deg: data.flex_angle_deg ?? 112,
+        flex_stiffness: data.flex_stiffness ?? 0.12
       }
     },
     inference: {
@@ -1258,6 +1268,8 @@ function startDemo() {
     btn.classList.add('active');
   }
 
+  setModePill('DEMO STREAM');
+
   // Try backend demo first
   fetch(`${SERVER_URL}/api/demo/start`, { method: 'POST' })
     .catch(() => console.info('[DEMO] Using browser-side simulation'));
@@ -1279,6 +1291,8 @@ function stopDemo() {
     btn.innerHTML = '<span class="btn-icon">▶</span> Live Simulation';
     btn.classList.remove('active');
   }
+
+  setModePill('DEMO STREAM');
 
   fetch(`${SERVER_URL}/api/demo/stop`, { method: 'POST' }).catch(() => {});
   if (state.demoInterval) {
@@ -1345,6 +1359,22 @@ function setDeviceStatus(connected, name = 'ESP32-S3 N16R8') {
   if (pill) {
     pill.style.borderColor = connected ? 'var(--color-primary)' : 'var(--glass-border)';
     pill.style.color = connected ? 'var(--color-primary)' : 'var(--text-secondary)';
+  }
+}
+
+function setModePill(text) {
+  const pill = document.getElementById('mode-pill');
+  if (!pill) return;
+  pill.textContent = text;
+  if (text.startsWith('LIVE')) {
+    pill.style.background = 'linear-gradient(135deg, rgba(16,185,129,0.25), rgba(5,150,105,0.15))';
+    pill.style.borderColor = 'rgba(16,185,129,0.6)';
+    pill.style.color = '#10b981';
+  } else {
+    // DEMO STREAM — reset to default styling
+    pill.style.background = '';
+    pill.style.borderColor = '';
+    pill.style.color = '';
   }
 }
 
@@ -2558,9 +2588,11 @@ window.addEventListener('DOMContentLoaded', () => {
     flex:        { flex_angle_deg: 0, flex_stiffness: 0 }
   }});
 
-  // Auto-start simulation after 1.5s if hardware/socket idle
+  // Auto-start simulation after 1.5s ONLY if no live hardware/socket feed
   setTimeout(() => {
-    if (!state.lastReading) {
+    const hasHardware = state.bleDevice || state.serialPort;
+    const hasSocket = state.socket && state.socket.connected;
+    if (!state.lastReading && !hasHardware && !hasSocket) {
       startDemo();
     }
   }, 1500);
@@ -2570,6 +2602,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Expose handlers globally
 window.toggleDemo                 = toggleDemo;
+window.setModePill                = setModePill;
 window.switchChart                = switchChart;
 window.clearLog                   = clearLog;
 window.setPalette                 = setPalette;
