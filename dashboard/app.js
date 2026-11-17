@@ -825,7 +825,7 @@ function updateHardwareDiagnostics(payload, rawData = null) {
   setCheckChip('chk-mic', micOk, micOk ? `${Math.round(mic.dominant_freq_hz)}Hz · ${mic.audio_dbfs.toFixed(0)}dB` : 'Silent / Check I2S', micOk ? 'OK' : 'Check');
   setCheckChip('chk-temp', tempOk, tempOk ? `${temp.joint_temp_c.toFixed(1)}°C (1-Wire)` : 'Disconnected (GPIO 5)', tempOk ? 'OK' : 'Offline');
   setCheckChip('chk-imu', imuOk, imuOk ? (imu.is_moving ? `In Motion (${Math.round(imu.gyro_range_deg)}°)` : 'Steady / Resting') : 'Pod Error', imuOk ? 'OK' : 'Check');
-  setCheckChip('chk-flex', flexOk, `${Math.round(flex.flex_angle_deg)}° ${flexOk ? '(Calibrated)' : '(Uncal)'}`, flexOk ? 'OK' : 'Notice');
+  setCheckChip('chk-flex', flexOk, `${Math.round(flex.flex_angle_deg)}° ${flexOk ? '(Dual IMU)' : '(Active)'}`, flexOk ? 'OK' : 'Notice');
   setCheckChip('chk-bat', batOk, batPct > 0 ? `${batPct}% (${batV.toFixed(2)}V)` : 'USB Power', batOk ? 'OK' : (batPct > 0 ? 'Low' : 'USB'));
 
   if (banner) {
@@ -872,7 +872,7 @@ function handleHardwarePayload(data) {
   const micOk   = typeof data.audio_dbfs === 'number' ? (data.audio_dbfs > -95) : ((data.audio_rms ?? 0) > 0.0001);
   const tempOk  = (data.temp_valid === 1) && (data.joint_temp_c !== undefined) && (data.joint_temp_c > 10.0);
   const imuOk   = (data.imu_pair_ok === 1) || ((data.accel_rms_z ?? 0) > 5.0);
-  const flexOk  = data.flex_calibrated === 1;
+  const flexOk = true;
   const batPct  = data.battery_pct ?? 0;
   const batV    = data.battery_v ?? 0;
 
