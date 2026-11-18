@@ -14,10 +14,11 @@ The system is an edge-to-cloud wearable biomedical platform designed for early, 
 graph TD
     subgraph Wearable Sensor Rig
         MIC[INMP441 I2S Mic<br/>Joint Acoustic Crepitus] -->|I2S Bus: GPIO 1, 2, 3| ESP[ESP32-S3 N16R8<br/>Dual Core 240MHz]
-        IR[MLX90614 IR Sensor<br/>Synovial Joint Temp] -->|I2C Bus: SDA 8, SCL 9| ESP
-        IMU[MPU6050 6-DOF<br/>Gait & Knee Kinematics] -->|I2C Bus: SDA 8, SCL 9| ESP
-        FLEX[Resistive Flex Sensor<br/>Joint Bend & ROM] -->|ADC1_CH3: GPIO 4| ESP
-        LED[WS2812 RGB LED<br/>Real-Time Status] <--|GPIO 48| ESP
+        IR[DS18B20 1-Wire<br/>Synovial Joint Temp] -->|1-Wire: GPIO 5| ESP
+        IMU_T[MPU6050 Pod 1: Thigh 0x68<br/>Femur Kinematics & Sagittal Tilt] -->|I2C Bus: SDA 8, SCL 9| ESP
+        IMU_S[MPU6050 Pod 2: Shank 0x69<br/>Tibia Kinematics & Sagittal Tilt] -->|I2C Bus: SDA 8, SCL 9| ESP
+        FLEX[Auxiliary Flex Sensor<br/>Secondary Bend Check] -->|ADC1_CH3: GPIO 4| ESP
+        LED[WS2812 / On-board LED<br/>Real-Time Status] <--|GPIO 21 / 6| ESP
     end
 
     subgraph Edge Firmware & Telemetry
@@ -73,10 +74,10 @@ graph TD
 | Sensor Module | Physical Parameter Measured | Communication Bus | ESP32-S3 Pin | Operating Voltage | Key Specification |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **INMP441** | Vibroarthrography (Joint Sounds / Crepitus) | **I2S Digital Audio** | SCK: `GPIO 1`<br/>WS: `GPIO 2`<br/>SD: `GPIO 3` | 3.3V | 24-bit high SNR (61 dBA), 16 kHz sampling rate, omnidirectional |
-| **MLX90614** | Synovial Joint Surface Temperature | **I2C Bus (Fast 100kHz)** | SDA: `GPIO 8`<br/>SCL: `GPIO 9` | 3.3V | Non-contact medical IR, ±0.5°C accuracy, 17-bit resolution |
-| **MPU6050** | 3D Gyroscope (ROM) & 3D Accelerometer (Gait) | **I2C Bus (Shared, 0x68)** | SDA: `GPIO 8`<br/>SCL: `GPIO 9` | 3.3V | 16-bit ADC, ±2g accelerometer, ±250°/s angular velocity, 21Hz LPF |
-| **Flex Bend Sensor** | Knee Flexion Angle & Joint Stiffness | **Analog ADC1** | Signal: `GPIO 4`<br/>(ADC1_CH3) | 3.3V | 2.2" resistive divider (10kΩ pull-down), 12-bit ADC (0–4095) |
-| **WS2812 NeoPixel** | Visual On-Device Diagnostic Triage | **Direct GPIO** | Signal: `GPIO 48` | 3.3V | Green: Normal \| Amber: Early OA \| Red: High Risk \| Blue: BLE Setup |
+| **DS18B20** | Synovial Joint Surface Temperature | **1-Wire Digital** | Data: `GPIO 5`<br/>(4.7kΩ pull-up) | 3.3V | Medical precision contact probe, ±0.125°C resolution |
+| **Dual MPU6050** | Primary Kinematic Chain Goniometer & Gait (v4.0) | **I2C Bus (200kHz)** | SDA: `GPIO 8`<br/>SCL: `GPIO 9` | 3.3V | Thigh Pod (`0x68`, AD0->GND) + Shank Pod (`0x69`, AD0->3V3), 100Hz complementary filter |
+| **Flex Bend Sensor** | Auxiliary Joint Flexion / Hysteresis Check | **Analog ADC1** | Signal: `GPIO 4`<br/>(ADC1_CH3) | 3.3V | Resistive divider (10kΩ fixed pull-down), 12-bit ADC |
+| **Status LED / AUX** | Visual On-Device Diagnostic Triage | **Direct GPIO** | Signal: `GPIO 21` / `GPIO 6` | 3.3V | Green: Normal \| Amber: Early OA \| Red: High Risk \| Blue: BLE Setup |
 
 ---
 

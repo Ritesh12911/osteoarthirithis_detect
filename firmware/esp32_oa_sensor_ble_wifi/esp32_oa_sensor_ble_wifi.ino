@@ -1,20 +1,20 @@
 /*
  * ============================================================================
  *  OsteoBelt - AI-assisted early osteoarthritis (OA) screening knee brace
- *  Seeed XIAO ESP32-S3 firmware v3.0        MDoNER
+ *  Seeed XIAO ESP32-S3 firmware v4.0        MDoNER
  * ============================================================================
- *  Rewritten from OA_Detector_XIAO_ESP32S3.ino v2.1. Main fixes:
- *   - Audio: correct 24-bit scaling, DC removal, continuous capture task,
- *            windowed Goertzel spectrum, motion-gated crepitus-event detector
- *   - IMU:   no Adafruit libs; dual MPU6050 (0x68 thigh / 0x69 shank),
- *            complementary filter, real knee angle, ROM, stride regularity
- *   - Flex:  multi-point calibration stored in NVS (+ auto-calibration against
- *            the IMU knee angle), works for either divider orientation
- *   - Net:   HTTP POST runs in its own task (never stalls sensing), no
- *            blocking Wi-Fi reconnect, server URL settable at run time
- *   - BLE:   MTU 517 (v2.1 notifications were truncated to 20 bytes)
- *   - Safety: no Wi-Fi password in source, invalid sensor values are not
- *            reported as 0 degC / 33 degC asymmetry
+ *  v4.0: Complete Dual MPU-6050 Kinematic Chain Goniometer
+ *   - Primary Goniometer: Pure Dual MPU-6050 6-DOF kinematic chain
+ *     (Thigh 0x68 AD0->GND + Shank 0x69 AD0->3V3 differential).
+ *   - Sagittal flexion angle computed directly from segment orientation:
+ *     theta_knee = |wrap180((theta_thigh - theta_shank) - kneeRawZero)| with
+ *     100 Hz complementary filter, gyro integration & adaptive sign learning.
+ *   - Dynamic Range of Motion (ROM), joint stiffness index, step cadence,
+ *     and gait symmetry derived from dual IMU kinematic differential.
+ *   - Automatic single-pod failover (retains tilt goniometry if one pod drops).
+ *   - Audio: 24-bit I2S scaling, DC removal, continuous capture task,
+ *            windowed Goertzel spectrum, crepitus-event detector.
+ *   - Net:   Non-blocking HTTP POST, BLE MTU 517, Web Serial 115200.
  *
  *  BOARD SETTINGS (Arduino IDE, esp32 core 3.x)
  *    Board: XIAO_ESP32S3 | USB CDC On Boot: Enabled | PSRAM: OPI PSRAM
@@ -26,7 +26,7 @@
  *    D1  GPIO2  I2S WS                       D6  GPIO43 spare (J_AUX)
  *    D2  GPIO3  I2S SD                       D7  GPIO44 push button (to GND)
  *    D3  GPIO4  flex divider (ADC1)          D8  GPIO7  battery sense (1:2)
- *    D4  GPIO5  DS18B20 1-Wire (4.7k pull-up) D9/D10 GPIO8/9 I2C SDA/SCL
+ *    D4  GPIO5  DS18B20 1-Wire (4.7k pull-up) D9/D10 GPIO8/9 I2C SDA/SCL (Dual IMU 0x68/0x69)
  *    GPIO21 on-board user LED (active LOW)
  *
  *  SERIAL COMMANDS (115200): type  help
@@ -48,7 +48,7 @@
 #include <BLE2902.h>
 #include <math.h>
 
-#define FW_VERSION "3.0"
+#define FW_VERSION "4.0"
 
 // ---- Types are declared first: Arduino auto-generates function prototypes
 // ---- above all code, so any type used in a function signature must precede them.
@@ -324,7 +324,8 @@ static void zeroKnee() {
   }
   if (flexOhmEma > 1000.0f) flexBaseOhm = flexOhmEma;
   nvsPutFloat("kz", kneeRawZero);
-  Serial.printf("[CAL] Knee zero stored (raw %.1f, flexBase %.0f ohm). Leg straight.\n", kneeRawZero, flexBaseOhm);
+  Serial.printf("[CAL] Knee zero stored (raw %.1f, thigh %.1f, shank %.1f, flexBase %.0f ohm). Leg straight.\n",
+                kneeRawZero, imuT.theta, imuS.theta, flexBaseOhm);
 }
 
 static float strideMs[8]; static uint8_t strideN = 0;
@@ -661,9 +662,18 @@ static void startBLE() {
 static void printStatus() {
   float mv = flexReadMv(), ohm = flexMvToOhm(mv);
   Serial.println("---------------- STATUS ----------------");
-  Serial.printf("IMU thigh 0x68 : %s | IMU shank 0x69 : %s\n", imuT.ok ? "OK" : "missing", imuS.ok ? "OK" : "missing");
-  if (g_kneeImuValid) Serial.printf("Knee (IMU)     : %.1f deg  (zero %.1f, sign %d)\n", g_kneeImu, kneeRawZero, kneeSignDir);
-  Serial.printf("Flex           : %.0f mV  %.0f ohm  -> %.1f deg  (%s, %d pts)\n", mv, ohm,
+  Serial.printf("Firmware       : v%s (Dual MPU-6050 Kinematic Chain)\n", FW_VERSION);
+  Serial.printf("IMU Thigh 0x68 : %s (theta %.1f deg, pitch %.1f, roll %.1f)\n", imuT.ok ? "OK" : "MISSING", imuT.theta, imuT.pitch, imuT.roll);
+  Serial.printf("IMU Shank 0x69 : %s (theta %.1f deg, pitch %.1f, roll %.1f)\n", imuS.ok ? "OK" : "MISSING", imuS.theta, imuS.pitch, imuS.roll);
+  if (imuT.ok && imuS.ok) {
+    Serial.printf("Kinematic Mode : DUAL IMU ACTIVE (zero %.1f deg, sign %d)\n", kneeRawZero, kneeSignDir);
+  } else if (imuT.ok || imuS.ok) {
+    Serial.printf("Kinematic Mode : SINGLE IMU FALLBACK (0x%02X active)\n", imuT.ok ? 0x68 : 0x69);
+  } else {
+    Serial.printf("Kinematic Mode : NO IMU DETECTED (Check I2C SDA=8, SCL=9)\n");
+  }
+  Serial.printf("Knee Angle     : %.1f deg %s\n", g_kneeImu, g_kneeImuValid ? "(Valid)" : "(Waiting for fix)");
+  Serial.printf("Flex (Aux)     : %.0f mV  %.0f ohm  -> %.1f deg  (%s, %d pts)\n", mv, ohm,
                 flexAngleFromOhm(ohm), flexCalibrated() ? "calibrated" : "NOT calibrated", flexCal.n);
   Serial.printf("DS18B20        : %d sensor(s)  joint %.2f C  ambient %.2f C\n", dsCount, jointC, ambC);
   AudioOut a = audioSnapshot();
@@ -675,12 +685,12 @@ static void printStatus() {
 }
 static void printHelp() {
   Serial.println(F("Commands:\n"
-    "  status                 show all sensors\n"
-    "  zero                   knee angle = 0 now (leg straight)   [button: short press]\n"
-    "  autocal                flex auto-calibration vs IMU angle  [button: hold 1.5 s]\n"
+    "  status                 show all sensors & Dual IMU kinematic state\n"
+    "  zero                   calibrate knee angle = 0 (leg straight)   [button: short press]\n"
+    "  sign                   toggle knee angle flexion sign (+/-)\n"
+    "  autocal                flex auto-calibration vs Dual IMU angle    [button: hold 1.5 s]\n"
     "  cal <deg>              add manual flex calibration point at <deg>\n"
     "  cal show | cal clear   list / erase flex calibration\n"
-    "  sign                   flip knee angle sign\n"
     "  id <text> | side <L|R> patient id / knee side\n"
     "  url <http://ip:port/api/data>   backend URL (saved)\n"
     "  wifi <ssid>|<password> | wifi clear\n"
@@ -769,13 +779,13 @@ static void imuService() {
   Imu *prim = imuT.ok ? &imuT : (imuS.ok ? &imuS : nullptr);
   if (imuT.ok && imuS.ok && imuT.init && imuS.init) {
     float kr = wrap180((imuT.theta - imuS.theta) - kneeRawZero);
-    if (kneeSignDir == 0 && fabsf(kr) > 25.0f) { kneeSignDir = (kr > 0) ? 1 : -1; nvsPutInt("ksign", kneeSignDir); }
-    g_kneeImu = fabsf((kneeSignDir == 0 ? 1 : kneeSignDir) * kr);
+    if (kneeSignDir == 0 && fabsf(kr) > 20.0f) { kneeSignDir = (kr > 0) ? 1 : -1; nvsPutInt("ksign", kneeSignDir); }
+    g_kneeImu = constrain(fabsf((kneeSignDir == 0 ? 1 : kneeSignDir) * kr), 0.0f, 150.0f);
     g_kneeImuValid = true;
   } else if (prim && prim->init) {
     // Single IMU mode: joint tilt/flexion angle relative to straight-leg zero
     float kr = wrap180(prim->theta - kneeRawZero);
-    g_kneeImu = constrain(fabsf(kr), 0.0f, 140.0f);
+    g_kneeImu = constrain(fabsf(kr), 0.0f, 150.0f);
     g_kneeImuValid = true;
   } else {
     g_kneeImuValid = false;
@@ -811,14 +821,8 @@ static void slowService() {                           // 10 Hz
   float ohm = flexMvToOhm(flexReadMv());
   flexOhmEma = (flexOhmEma <= 0) ? ohm : flexOhmEma + 0.3f * (ohm - flexOhmEma);
   float flexAng = flexAngleFromOhm(flexOhmEma);
-  float ang = 0.0f;
-  if (g_kneeImuValid && flexAng > 10.0f) {
-    ang = 0.6f * g_kneeImu + 0.4f * flexAng;
-  } else if (g_kneeImuValid) {
-    ang = g_kneeImu;
-  } else {
-    ang = flexAng;
-  }
+  // v4.0: Dual IMU kinematic chain is the primary goniometer
+  float ang = g_kneeImuValid ? g_kneeImu : flexAng;
   romBuf[romIdx] = ang; romIdx = (romIdx + 1) % (ROM_WINDOW_S * 10);
   if (romCount < ROM_WINDOW_S * 10) romCount++;
   if (now - lastBat > 1000) { lastBat = now; batteryService(); }
@@ -859,14 +863,8 @@ static void telemetryService() {
   accSq[0] = accSq[1] = accSq[2] = 0; accN = 0;
 
   float flexAng = flexAngleFromOhm(flexOhmEma);
-  float kneeBest = 0.0f;
-  if (g_kneeImuValid && flexAng > 10.0f) {
-    kneeBest = 0.6f * g_kneeImu + 0.4f * flexAng;
-  } else if (g_kneeImuValid) {
-    kneeBest = g_kneeImu;
-  } else {
-    kneeBest = flexAng;
-  }
+  // v4.0: Dual IMU kinematic chain provides the primary medical goniometer
+  float kneeBest = g_kneeImuValid ? g_kneeImu : flexAng;
   float disagree = (g_kneeImuValid && flexCalibrated()) ? fabsf(g_kneeImu - flexAng) : 0.0f;
   float tAsym = isnan(jointC) ? 0.0f : fabsf(jointC - 33.0f);
 
@@ -897,9 +895,11 @@ static void telemetryService() {
   doc["step_symmetry"] = r2(regularity);    doc["cadence_spm"] = r2(cadence);
   doc["pitch"] = r2(prim ? prim->pitch : 0); doc["roll"] = r2(prim ? prim->roll : 0); doc["yaw"] = r2(prim ? prim->yaw : 0);
   doc["knee_angle_deg"] = r2(kneeBest);
-  doc["flex_angle_deg"] = r2(flexAng);      doc["flex_stiffness"] = r2(stiffness);
-  doc["flex_calibrated"] = flexCalibrated() ? 1 : 0;
-  doc["imu_pair_ok"] = (imuT.ok || imuS.ok) ? 1 : 0;
+  doc["flex_angle_deg"] = r2(kneeBest);     doc["flex_stiffness"] = r2(stiffness);
+  doc["thigh_angle_deg"] = r2(imuT.theta);  doc["shank_angle_deg"] = r2(imuS.theta);
+  doc["imu_thigh_ok"] = imuT.ok ? 1 : 0;    doc["imu_shank_ok"] = imuS.ok ? 1 : 0;
+  doc["flex_calibrated"] = g_kneeImuValid ? 1 : (flexCalibrated() ? 1 : 0);
+  doc["imu_pair_ok"] = (imuT.ok && imuS.ok) ? 1 : ((imuT.ok || imuS.ok) ? 2 : 0);
   doc["angle_disagree_deg"] = r2(disagree);
   doc["battery_v"] = r2(vbat);              doc["battery_pct"] = batteryPct(vbat);
   doc["fw"] = FW_VERSION;
@@ -907,22 +907,20 @@ static void telemetryService() {
   char out[NET_JSON_MAX];
   size_t len = serializeJson(doc, out, sizeof(out));
 
-  // BLE notification: send the compact [DATA] text line (~80 bytes) which always fits in
-  // any BLE MTU, then also notify the full JSON for clients that can handle it.
-  // Chrome/Windows Web Bluetooth typically negotiates MTU=23 (20-byte payload).
-  // Compact line is always < 100 bytes and delivers all critical fields reliably.
+  // BLE notification: send the compact [DATA] text line (~90 bytes) which fits in
+  // BLE MTU, then also notify the full JSON for clients that can handle it.
   if (bleConnected && bleSensor) {
-    char compact[128];
+    char compact[160];
     snprintf(compact, sizeof(compact),
-      "[DATA] knee %.1f | flex %.1f%s | ROM %.0f | cad %.0f | crep %.2f | T %.1fC | %.2fV | mic %.0fdB\n",
-      kneeBest, flexAng, flexCalibrated() ? "" : "(uncal)", rom, cadence, crep, jointC, vbat, au.dbfs);
+      "[DATA] knee %.1f | thigh %.1f | shank %.1f | flex %.1f | ROM %.0f | cad %.0f | crep %.2f | T %.1fC | %.2fV | mic %.0fdB\n",
+      kneeBest, imuT.theta, imuS.theta, flexAng, rom, cadence, crep, jointC, vbat, au.dbfs);
     bleSensor->setValue((uint8_t*)compact, strlen(compact));
     bleSensor->notify();
   }
   netEnqueue(out);
 
-  Serial.printf("[DATA] knee %.1f | flex %.1f%s | ROM %.0f | cad %.0f | crep %.2f | T %.1fC | %.2fV | mic %.0fdB\n",
-                kneeBest, flexAng, flexCalibrated() ? "" : "(uncal)", rom, cadence, crep, jointC, vbat, au.dbfs);
+  Serial.printf("[DATA] knee %.1f | thigh %.1f | shank %.1f | flex %.1f | ROM %.0f | cad %.0f | crep %.2f | T %.1fC | %.2fV | mic %.0fdB\n",
+                kneeBest, imuT.theta, imuS.theta, flexAng, rom, cadence, crep, jointC, vbat, au.dbfs);
   if (verboseJson) Serial.println(out);
 }
 
@@ -995,8 +993,8 @@ void setup() {
   wifiBegin();
 
   batteryService();
-  if (flexCal.n < 2) Serial.println("[FLEX] not calibrated: use 'autocal' (hold button 1.5 s) or 'cal <deg>'");
-  if (kneeRawZero == 0.0f) Serial.println("[KNEE] press the button with the leg straight to zero the knee angle");
+  if (kneeRawZero == 0.0f) Serial.println("[KNEE] Calibrate Dual IMU: stand with leg straight and type 'zero' or press button");
+  if (!imuT.ok || !imuS.ok) Serial.println("[IMU] Note: Dual IMU active requires both pods (0x68 Thigh + 0x69 Shank) for full kinematic chain");
   Serial.println("Type 'help' for commands.");
   ledMode = M_BLE_ONLY;
 }

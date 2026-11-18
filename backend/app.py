@@ -122,6 +122,11 @@ def receive_data():
         data.setdefault("side",           "LEFT")
         data.setdefault("sample_idx",      0)
         data.setdefault("ambient_temp_c", 28.0)
+        data.setdefault("fw",             "4.0")
+        if "knee_angle_deg" in data and "flex_angle_deg" not in data:
+            data["flex_angle_deg"] = data["knee_angle_deg"]
+        elif "flex_angle_deg" in data and "knee_angle_deg" not in data:
+            data["knee_angle_deg"] = data["flex_angle_deg"]
 
         result = inf.predict(data)
         row_id = db.insert_session(data, result)
@@ -158,11 +163,13 @@ def receive_data():
 
 
 def _build_payload(row_id, data, result):
+    knee_ang = data.get("knee_angle_deg", data.get("flex_angle_deg", 0))
     return {
         "row_id":     row_id,
         "patient_id": data["patient_id"],
         "side":       data["side"],
         "timestamp":  datetime.utcnow().isoformat() + "Z",
+        "fw":         data.get("fw", "4.0"),
         "sensors": {
             "microphone": {
                 "audio_rms":        data.get("audio_rms", 0),
@@ -175,18 +182,26 @@ def _build_payload(row_id, data, result):
                 "temp_asymmetry": data.get("temp_asymmetry", 0),
             },
             "imu": {
-                "accel_rms_x":    data.get("accel_rms_x", 0),
-                "accel_rms_y":    data.get("accel_rms_y", 0),
-                "accel_rms_z":    data.get("accel_rms_z", 0),
-                "gyro_range_deg": data.get("gyro_range_deg", 0),
-                "step_symmetry":  data.get("step_symmetry", 0),
-                "pitch":          data.get("pitch", 0),
-                "roll":           data.get("roll",  0),
-                "yaw":            data.get("yaw",   0),
+                "accel_rms_x":     data.get("accel_rms_x", 0),
+                "accel_rms_y":     data.get("accel_rms_y", 0),
+                "accel_rms_z":     data.get("accel_rms_z", 0),
+                "gyro_range_deg":  data.get("gyro_range_deg", 0),
+                "step_symmetry":   data.get("step_symmetry", 0),
+                "cadence_spm":     data.get("cadence_spm", 0),
+                "pitch":           data.get("pitch", 0),
+                "roll":            data.get("roll",  0),
+                "yaw":             data.get("yaw",   0),
+                "thigh_angle_deg": data.get("thigh_angle_deg", 0),
+                "shank_angle_deg": data.get("shank_angle_deg", 0),
+                "knee_angle_deg":  knee_ang,
+                "imu_pair_ok":     data.get("imu_pair_ok", 1),
+                "imu_thigh_ok":    data.get("imu_thigh_ok", 1),
+                "imu_shank_ok":    data.get("imu_shank_ok", 1),
             },
             "flex": {
-                "flex_angle_deg": data.get("flex_angle_deg", 0),
-                "flex_stiffness": data.get("flex_stiffness", 0),
+                "flex_angle_deg":  knee_ang,
+                "flex_stiffness":  data.get("flex_stiffness", 0),
+                "flex_calibrated": data.get("flex_calibrated", 1),
             }
         },
         "inference": result

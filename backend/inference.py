@@ -130,7 +130,7 @@ class OAInferenceEngine:
         crep  = features.get("crepitus_score", 0.0)
         temp  = features.get("joint_temp_c", 33.0)
         asym  = features.get("temp_asymmetry", 0.0)
-        flex  = features.get("flex_angle_deg", 110.0)
+        flex  = features.get("flex_angle_deg", features.get("knee_angle_deg", 110.0))
         stiff = features.get("flex_stiffness", 0.1)
         sym   = features.get("step_symmetry", 0.9)
 
@@ -182,7 +182,10 @@ class OAInferenceEngine:
             return self._rule_based_predict(sensor_data)
 
         try:
-            x = np.array([[sensor_data.get(col, NORMAL_BASELINE[col]) for col in FEATURE_COLS]])
+            feed_data = dict(sensor_data)
+            if "knee_angle_deg" in feed_data and "flex_angle_deg" not in feed_data:
+                feed_data["flex_angle_deg"] = feed_data["knee_angle_deg"]
+            x = np.array([[feed_data.get(col, NORMAL_BASELINE[col]) for col in FEATURE_COLS]])
             x_scaled = self.scaler.transform(x)
 
             # 1. Multi-Class KL Staging

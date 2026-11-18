@@ -201,6 +201,31 @@ except Exception as _e:
 def insert_session(sensor_data: dict, inference_result: dict) -> int:
     conn = get_conn()
     try:
+        payload = {
+            "patient_id":        sensor_data.get("patient_id", "PATIENT_001"),
+            "side":              sensor_data.get("side", "LEFT"),
+            "sample_idx":        sensor_data.get("sample_idx", 0),
+            "audio_rms":         sensor_data.get("audio_rms", 0.0),
+            "dominant_freq_hz":  sensor_data.get("dominant_freq_hz", 180.0),
+            "crepitus_score":    sensor_data.get("crepitus_score", 0.0),
+            "joint_temp_c":      sensor_data.get("joint_temp_c", 33.0),
+            "ambient_temp_c":    sensor_data.get("ambient_temp_c", 28.0),
+            "temp_asymmetry":    sensor_data.get("temp_asymmetry", 0.0),
+            "accel_rms_x":       sensor_data.get("accel_rms_x", 0.0),
+            "accel_rms_y":       sensor_data.get("accel_rms_y", 0.0),
+            "accel_rms_z":       sensor_data.get("accel_rms_z", 9.8),
+            "gyro_range_deg":    sensor_data.get("gyro_range_deg", sensor_data.get("rom_deg", 0.0)),
+            "step_symmetry":     sensor_data.get("step_symmetry", 1.0),
+            "flex_angle_deg":    sensor_data.get("flex_angle_deg", sensor_data.get("knee_angle_deg", 0.0)),
+            "flex_stiffness":    sensor_data.get("flex_stiffness", 0.0),
+            "risk_score":        inference_result.get("risk_score", 0.0),
+            "risk_level":        inference_result.get("risk_level", "LOW"),
+            "label":             inference_result.get("label", "Unknown"),
+            "confidence":        inference_result.get("confidence", 0.0),
+            "method":            inference_result.get("method", "unknown"),
+            "raw_data":          json.dumps(sensor_data),
+            "inference_result":  json.dumps(inference_result),
+        }
         conn.execute("""
             INSERT INTO sessions (
                 patient_id, side, sample_idx,
@@ -221,16 +246,7 @@ def insert_session(sensor_data: dict, inference_result: dict) -> int:
                 :risk_score, :risk_level, :label, :confidence, :method,
                 :raw_data, :inference_result
             )
-        """, {
-            **sensor_data,
-            "risk_score":        inference_result.get("risk_score", 0),
-            "risk_level":        inference_result.get("risk_level", "LOW"),
-            "label":             inference_result.get("label", "Unknown"),
-            "confidence":        inference_result.get("confidence", 0),
-            "method":            inference_result.get("method", "unknown"),
-            "raw_data":          json.dumps(sensor_data),
-            "inference_result":  json.dumps(inference_result),
-        })
+        """, payload)
         conn.commit()
         row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return row_id

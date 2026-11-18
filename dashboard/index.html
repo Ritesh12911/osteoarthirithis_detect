@@ -238,7 +238,7 @@
         <div class="hw-check-chip" id="chk-imu">
           <span class="chk-icon">📐</span>
           <div class="chk-info">
-            <span class="chk-label">Motion (Dual IMU)</span>
+            <span class="chk-label">Gait Kinematics</span>
             <strong class="chk-val" id="chk-imu-val">Waiting...</strong>
           </div>
           <span class="chk-badge" id="chk-imu-badge">--</span>
@@ -449,8 +449,8 @@
           <div class="chart-tabs">
             <button class="tab-btn active" onclick="switchChart('audio')">🔊 Audio</button>
             <button class="tab-btn" onclick="switchChart('temp')">🌡️ Temp</button>
-            <button class="tab-btn" onclick="switchChart('imu')">📐 IMU</button>
-            <button class="tab-btn" onclick="switchChart('flex')">🦵 Flex</button>
+            <button class="tab-btn" onclick="switchChart('imu')">📐 Kinematics</button>
+            <button class="tab-btn" onclick="switchChart('flex')">🦵 Dual IMU</button>
           </div>
         </div>
         <div class="chart-container" id="chart-audio"><canvas id="audioChart"></canvas></div>
@@ -513,8 +513,8 @@
       </div>
       <div class="glass-card sensor-card imu-card">
         <div class="sensor-icon">📐</div>
-        <div class="sensor-name">Dual MPU6050 IMU</div>
-        <div class="sensor-detail">I2C · GPIO 8/9 · Thigh/Shank</div>
+        <div class="sensor-name">Gait &amp; Kinematics</div>
+        <div class="sensor-detail">I2C · GPIO 8/9 · 100 Hz Fusion</div>
         <div class="sensor-values">
           <div class="sv-item"><span>AccX</span><strong id="sv-ax">--</strong></div>
           <div class="sv-item"><span>Gyro°</span><strong id="sv-gy">--</strong></div>
@@ -524,8 +524,8 @@
       </div>
       <div class="glass-card sensor-card flex-card">
         <div class="sensor-icon">🦵</div>
-        <div class="sensor-name">Flex Sensor</div>
-        <div class="sensor-detail">ADC · GPIO 4 · 10kΩ divider</div>
+        <div class="sensor-name">Dual IMU Goniometer</div>
+        <div class="sensor-detail">Kinematic Chain · Thigh (0x68) + Shank (0x69)</div>
         <div class="sensor-values">
           <div class="sv-item"><span>Angle</span><strong id="sv-angle">-- °</strong></div>
           <div class="sv-item"><span>Stiff.</span><strong id="sv-stiff">--</strong></div>

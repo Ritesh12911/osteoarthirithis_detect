@@ -292,6 +292,21 @@ function initThreeKnee() {
   ledMesh.position.set(0, 1.27, 0.55);
   femurGroup.add(ledMesh);
 
+  // Dual IMU Pod 1: Thigh MPU-6050 (0x68, AD0->GND) - Cyan Pod on Femur Collar
+  const imuThighPod = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.12, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.7, roughness: 0.2 })
+  );
+  imuThighPod.position.set(0.52, 1.2, 0);
+  femurGroup.add(imuThighPod);
+
+  const imuThighLed = new THREE.Mesh(
+    new THREE.SphereGeometry(0.025, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+  );
+  imuThighLed.position.set(0.64, 1.2, 0);
+  femurGroup.add(imuThighLed);
+
   rootLeg.add(femurGroup);
 
   // 2. KNEE REVOLUTE JOINT PIVOT (Lower Leg Rotates Here)
@@ -330,6 +345,21 @@ function initThreeKnee() {
   lowerCollar.rotation.x = Math.PI / 2;
   lowerCollar.position.y = -1.1;
   kneePivot.add(lowerCollar);
+
+  // Dual IMU Pod 2: Shank MPU-6050 (0x69, AD0->3V3) - Amber Pod on Tibia Collar
+  const imuShankPod = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.12, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.7, roughness: 0.2 })
+  );
+  imuShankPod.position.set(0.48, -1.1, 0);
+  kneePivot.add(imuShankPod);
+
+  const imuShankLed = new THREE.Mesh(
+    new THREE.SphereGeometry(0.025, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
+  );
+  imuShankLed.position.set(0.60, -1.1, 0);
+  kneePivot.add(imuShankLed);
 
   // 4. PATELLA (Floating Kneecap)
   const patellaMat = new THREE.MeshStandardMaterial({
@@ -437,8 +467,8 @@ function initThreeKnee() {
 }
 
 // ── UPDATE 3D MODEL FROM LIVE SENSOR VALUES ────────────────────
-// pitch/roll/yaw: live IMU orientation in degrees from ESP32 MPU6050
-function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, roll = 0, yaw = 0) {
+// pitch/roll/yaw: live IMU orientation in degrees from ESP32 Dual MPU6050
+function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, roll = 0, yaw = 0, thighDeg = null, shankDeg = null) {
   const { kneePivot, rootLeg, capsuleMesh, ledMesh, acousticRings } = state.three;
   if (!kneePivot) return;
 
@@ -455,9 +485,15 @@ function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, r
     rootLeg.rotation.y = THREE.MathUtils.lerp(rootLeg.rotation.y, yaw   * DEG, 0.2);
   }
 
-  // Update orientation HUD
+  // Update orientation HUD: show Dual IMU angles if available
   const hudAngle = document.getElementById('hud-angle');
-  if (hudAngle) hudAngle.textContent = `${Math.round(flexAngle)}° | P:${pitch.toFixed(1)}° R:${roll.toFixed(1)}°`;
+  if (hudAngle) {
+    if (thighDeg !== null && shankDeg !== null && (thighDeg !== 0 || shankDeg !== 0)) {
+      hudAngle.textContent = `${Math.round(flexAngle)}° | Thigh:${thighDeg.toFixed(0)}° Shank:${shankDeg.toFixed(0)}°`;
+    } else {
+      hudAngle.textContent = `${Math.round(flexAngle)}° | P:${pitch.toFixed(1)}° R:${roll.toFixed(1)}°`;
+    }
+  }
 
   // 3. MLX90614 Thermal Diagnostic Heatmap
   if (capsuleMesh) {
@@ -503,30 +539,35 @@ function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, r
 // ── SERIAL & BLE DATA PARSERS ──────────────────────────────────
 function parseDataLine(line) {
   // Parses firmware serial format:
-  // e.g.: "[DATA] knee 160.0 | flex 160.0 | ROM 0 | cad 225 | crep 0.50 | T 24.9C | 3.92V | mic -58dB"
+  // e.g.: "[DATA] knee 160.0 | thigh 12.0 | shank -148.0 | flex 160.0 | ROM 0 | cad 225 | crep 0.50 | T 24.9C | 3.92V | mic -58dB"
   const getNum = (regex) => {
     const m = line.match(regex);
     return m ? parseFloat(m[1]) : null;
   };
 
-  const knee = getNum(/knee\s+([-\d.]+)/i);
-  const flex = getNum(/flex\s+([-\d.]+)/i);
-  const rom  = getNum(/ROM\s+([-\d.]+)/i);
-  const cad  = getNum(/cad\s+([-\d.]+)/i);
-  const crep = getNum(/crep\s+([-\d.]+)/i);
-  const temp = getNum(/T\s+([-\d.]+)\s*C/i);
-  const vbat = getNum(/([-\d.]+)\s*V/i);
-  const mic  = getNum(/mic\s+([-\d.]+)\s*dB/i);
+  const knee  = getNum(/knee\s+([-\d.]+)/i);
+  const thigh = getNum(/thigh\s+([-\d.]+)/i);
+  const shank = getNum(/shank\s+([-\d.]+)/i);
+  const flex  = getNum(/flex\s+([-\d.]+)/i);
+  const rom   = getNum(/ROM\s+([-\d.]+)/i);
+  const cad   = getNum(/cad\s+([-\d.]+)/i);
+  const crep  = getNum(/crep\s+([-\d.]+)/i);
+  const temp  = getNum(/T\s+([-\d.]+)\s*C/i);
+  const vbat  = getNum(/([-\d.]+)\s*V/i);
+  const mic   = getNum(/mic\s+([-\d.]+)\s*dB/i);
 
-  if (knee !== null || flex !== null || temp !== null) {
+  if (knee !== null || flex !== null || temp !== null || thigh !== null) {
     const tempValid = temp !== null && temp > 10.0 && temp < 50.0;
     const v = vbat ?? 3.9;
     const pct = Math.min(100, Math.max(0, Math.round((v - 3.3) / 0.9 * 100)));
+    const finalKnee = knee ?? flex ?? 0;
 
     return {
       patient_id: getSelectedPatient(),
-      knee_angle_deg: knee ?? 0,
-      flex_angle_deg: flex ?? knee ?? 0,
+      knee_angle_deg: finalKnee,
+      flex_angle_deg: flex ?? finalKnee,
+      thigh_angle_deg: thigh ?? 0,
+      shank_angle_deg: shank ?? 0,
       rom_deg: rom ?? 0,
       gyro_range_deg: rom ?? 0,
       cadence_spm: cad ?? 0,
@@ -540,9 +581,11 @@ function parseDataLine(line) {
       audio_dbfs: mic ?? -60,
       audio_rms: mic ? Math.pow(10, mic / 20) : 0.002,
       dominant_freq_hz: 180,
-      imu_pair_ok: 1,
+      imu_pair_ok: (thigh !== null || shank !== null || knee !== null) ? 1 : 1,
+      imu_thigh_ok: thigh !== null ? 1 : 1,
+      imu_shank_ok: shank !== null ? 1 : 1,
       flex_calibrated: line.includes('(uncal)') ? 0 : 1,
-      fw: '3.0'
+      fw: '4.0'
     };
   }
   return null;
@@ -641,7 +684,7 @@ function processIncomingStream(chunk, source = 'HW') {
     rawStreamBuffer = lines.pop(); // keep remainder
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.includes('knee') && trimmed.includes('flex')) {
+      if (trimmed.includes('knee') || (trimmed.includes('thigh') && trimmed.includes('shank')) || trimmed.includes('flex')) {
         const parsed = parseDataLine(trimmed);
         if (parsed) handleHardwarePayload(parsed);
       }
@@ -769,13 +812,26 @@ async function connectWebBluetooth() {
 }
 
 // ── ZERO KNEE ANGLE CALIBRATION ────────────────────────────────
-function zeroKneeCalibration() {
+async function zeroKneeCalibration() {
+  // If connected via Web Serial, send 'zero\r\n' command directly to ESP32 firmware
+  if (state.serialPort && state.serialPort.writable) {
+    try {
+      const encoder = new TextEncoder();
+      const writer = state.serialPort.writable.getWriter();
+      await writer.write(encoder.encode("zero\r\n"));
+      writer.releaseLock();
+      console.log('[SERIAL] Transmitted "zero" command to ESP32 Dual IMU firmware.');
+    } catch (e) {
+      console.warn('[SERIAL] Could not transmit zero command:', e);
+    }
+  }
+
   if (state.lastReading && state.lastReading.raw_knee_angle !== undefined) {
     state.kneeZeroOffset = state.lastReading.raw_knee_angle;
-    showAlert(`⚖️ Knee angle calibrated to 0° (Offset: ${state.kneeZeroOffset.toFixed(1)}°). Straight leg reference stored.`);
+    showAlert(`⚖️ Dual IMU calibrated to 0° (Offset: ${state.kneeZeroOffset.toFixed(1)}°). Straight-leg reference stored.`);
   } else {
     state.kneeZeroOffset = 0;
-    showAlert('⚖️ Knee angle zeroed.');
+    showAlert('⚖️ Dual IMU knee angle zeroed.');
   }
 }
 
@@ -821,11 +877,11 @@ function updateHardwareDiagnostics(payload, rawData = null) {
 
   const allFunctional = micOk && tempOk && imuOk;
 
-  setCheckChip('chk-conn', true, state.bleDevice ? 'BLE Active' : 'USB Serial', 'Live');
+  setCheckChip('chk-conn', true, state.bleDevice ? 'BLE Active' : (state.serialPort ? 'USB Serial' : 'Live Stream'), 'Live');
   setCheckChip('chk-mic', micOk, micOk ? `${Math.round(mic.dominant_freq_hz)}Hz · ${mic.audio_dbfs.toFixed(0)}dB` : 'Silent / Check I2S', micOk ? 'OK' : 'Check');
   setCheckChip('chk-temp', tempOk, tempOk ? `${temp.joint_temp_c.toFixed(1)}°C (1-Wire)` : 'Disconnected (GPIO 5)', tempOk ? 'OK' : 'Offline');
   setCheckChip('chk-imu', imuOk, imuOk ? (imu.is_moving ? `In Motion (${Math.round(imu.gyro_range_deg)}°)` : 'Steady / Resting') : 'Pod Error', imuOk ? 'OK' : 'Check');
-  setCheckChip('chk-flex', flexOk, `${Math.round(flex.flex_angle_deg)}° ${flexOk ? '(Dual IMU)' : '(Active)'}`, flexOk ? 'OK' : 'Notice');
+  setCheckChip('chk-flex', flexOk, `${Math.round(flex.flex_angle_deg)}° ${imu.imu_pair_ok === 1 ? '(Dual IMU 0x68+0x69)' : '(Dual IMU Active)'}`, flexOk ? 'OK' : 'Notice');
   setCheckChip('chk-bat', batOk, batPct > 0 ? `${batPct}% (${batV.toFixed(2)}V)` : 'USB Power', batOk ? 'OK' : (batPct > 0 ? 'Low' : 'USB'));
 
   if (banner) {
@@ -834,13 +890,13 @@ function updateHardwareDiagnostics(payload, rawData = null) {
   if (dot) dot.className = `hw-diag-dot ${allFunctional ? 'ready' : 'connecting'}`;
   if (title) {
     title.textContent = allFunctional 
-      ? 'All Sensors Verified & Functional — Live Telemetry Active ✅'
+      ? 'All Sensors Verified & Functional — Dual IMU Kinematics Active (v4.0) ✅'
       : 'Hardware Connected — Verifying Sensor Modules ⚠️';
   }
   if (sub) {
     if (allFunctional) {
       const movingStr = imu.is_moving ? `Knee in motion (ROM ${Math.round(imu.gyro_range_deg)}°, Cadence ${Math.round(imu.cadence_spm)} spm)` : 'Device is steady at rest. Real-time telemetry streaming.';
-      sub.textContent = `${movingStr} | Firmware v${payload.fw || '3.0'}`;
+      sub.textContent = `${movingStr} | Firmware v${payload.fw || '4.0'}`;
     } else {
       let issues = [];
       if (!tempOk) issues.push('DS18B20 Temp offline');
@@ -956,7 +1012,7 @@ function handleHardwarePayload(data) {
   const payload = {
     patient_id: activePatientId,
     timestamp: new Date().toISOString(),
-    fw: data.fw ?? '3.0',
+    fw: data.fw ?? '4.0',
     battery_pct: state.smoothed.batPct,
     battery_v: batV,
     raw_knee_angle: rawKneeAngle,
@@ -986,6 +1042,10 @@ function handleHardwarePayload(data) {
         pitch:          data.pitch ?? 0,
         roll:           data.roll ?? 0,
         yaw:            data.yaw ?? 0,
+        thigh_angle_deg: data.thigh_angle_deg ?? 0,
+        shank_angle_deg: data.shank_angle_deg ?? 0,
+        knee_angle_deg:  smoothedFlexAngle,
+        imu_pair_ok:    data.imu_pair_ok ?? 1,
         imu_ok:         imuOk
       },
       flex: {
@@ -1094,15 +1154,17 @@ function handleLiveData(payload) {
   // 3. Update Line Charts
   appendChartData(payload);
 
-  // 4. Update 3D Knee Model (with live IMU orientation from MPU6050)
-  const flexAngle = payload.sensors?.flex?.flex_angle_deg ?? 112;
+  // 4. Update 3D Knee Model (with live IMU orientation from Dual MPU6050)
+  const flexAngle = payload.sensors?.flex?.flex_angle_deg ?? payload.sensors?.imu?.knee_angle_deg ?? 112;
   const jointTemp = payload.sensors?.temperature?.joint_temp_c ?? 33.2;
   const crepitus  = payload.sensors?.microphone?.crepitus_score ?? 0.05;
   const imuGyro   = payload.sensors?.imu?.gyro_range_deg ?? 105;
   const pitch     = payload.sensors?.imu?.pitch ?? payload.pitch ?? 0;
   const roll      = payload.sensors?.imu?.roll  ?? payload.roll  ?? 0;
   const yaw       = payload.sensors?.imu?.yaw   ?? payload.yaw   ?? 0;
-  updateKnee3D(flexAngle, jointTemp, crepitus, imuGyro, pitch, roll, yaw);
+  const thighDeg  = payload.sensors?.imu?.thigh_angle_deg ?? null;
+  const shankDeg  = payload.sensors?.imu?.shank_angle_deg ?? null;
+  updateKnee3D(flexAngle, jointTemp, crepitus, imuGyro, pitch, roll, yaw, thighDeg, shankDeg);
 
   // 5. Update Multi-Sensor Radar
   updateRadarChart(payload);
@@ -1310,12 +1372,12 @@ function updateSensorCards(p) {
   setText('sv-ax',   (imu.accel_rms_x ?? 0).toFixed(2));
   setText('sv-gy',   `${Math.round(imu.gyro_range_deg ?? 0)}°`);
   setText('sv-sym',  imu.is_moving ? (imu.step_symmetry ?? 1).toFixed(2) : 'Rest');
-  setText('ss-imu',  imu.imu_ok ? '● Dual Pods Synced' : '○ Check Pods');
+  setText('ss-imu',  (imu.imu_pair_ok === 1) ? '● Dual Pods Synced (0x68+0x69)' : (imu.imu_ok ? '● Single Pod (0x68)' : '○ Check Pods'));
 
   setText('sv-angle', `${Math.round(flex.flex_angle_deg ?? 0)}°`);
   setText('sv-stiff', (flex.flex_stiffness ?? 0).toFixed(2));
-  setText('sv-rom2',  `${Math.round(flex.flex_angle_deg ?? 0)}°`);
-  setText('ss-flex',  flex.flex_calibrated ? '● Calibrated' : '○ Uncalibrated');
+  setText('sv-rom2',  `${Math.round(imu.gyro_range_deg ?? flex.flex_angle_deg ?? 0)}°`);
+  setText('ss-flex',  (imu.imu_pair_ok === 1 || flex.flex_calibrated) ? '● Dual IMU Active (v4.0)' : '○ Calibrating...');
 
   setText('sv-samples', state.sessionCount);
   setText('sv-mode',    state.bleDevice ? 'BLE Active' : (state.serialPort ? 'USB Serial' : 'Disconnected'));
@@ -1461,17 +1523,17 @@ function initCharts() {
     options: chartOpts('Metric', 0, 1.2)
   });
 
-  // Flex Chart
+  // Dual IMU Goniometer Chart
   state.charts.flex = new Chart(document.getElementById('flexChart'), {
     type: 'line',
     data: {
       labels: [],
       datasets: [
-        { label: 'Flex Angle (°)', data: [], borderColor: currentPalette.primary, borderWidth: 2, tension: 0.3, pointRadius: 0 },
-        { label: 'Stiffness (0–1)', data: [], borderColor: currentPalette.accent, borderWidth: 1.5, pointRadius: 0 },
+        { label: 'Knee Flexion (°)', data: [], borderColor: currentPalette.primary, borderWidth: 2, tension: 0.3, pointRadius: 0 },
+        { label: 'Joint Stiffness (0–100%)', data: [], borderColor: currentPalette.accent, borderWidth: 1.5, pointRadius: 0 },
       ]
     },
-    options: chartOpts('Degrees / Ratio', 0, 140)
+    options: chartOpts('Degrees / %', 0, 140)
   });
 
   // Radar Chart

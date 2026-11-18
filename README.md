@@ -46,7 +46,7 @@ osteoarthirithis_detect/
 │   └── manifest.json           ← PWA configuration
 ├── firmware/
 │   └── esp32_oa_sensor_ble_wifi/
-│       └── esp32_oa_sensor_ble_wifi.ino  ← OsteoBelt v3.0 firmware
+│       └── esp32_oa_sensor_ble_wifi.ino  ← OsteoBelt v4.0 firmware (Dual MPU-6050 Kinematic Chain)
 ├── ml/
 │   ├── generate_dataset.py     ← Synthetic dataset generator
 │   ├── train_model.py          ← Model training pipeline
@@ -62,8 +62,8 @@ osteoarthirithis_detect/
 |--------------------|--------|-----------|------|
 | Acoustic Crepitus | INMP441 Mic | I2S | BCLK=GPIO1, WS=GPIO2, SD=GPIO3 |
 | Knee Joint Temperature | DS18B20 | 1-Wire | GPIO5 (4.7kΩ pull-up) |
-| Motion & Knee Angle | Dual MPU6050 | I2C | SDA=GPIO8, SCL=GPIO9 (Thigh `0x68`, Shank `0x69`) |
-| Joint Flexion / Stiffness | Flex Sensor | ADC1 | GPIO4 (10kΩ divider) |
+| Primary Goniometer & Gait (v4.0) | Dual MPU6050 Kinematic Chain | I2C | SDA=GPIO8, SCL=GPIO9 (Thigh `0x68` AD0->GND, Shank `0x69` AD0->3V3) |
+| Aux Goniometer / Stiffness | Flex Sensor (Optional) | ADC1 | GPIO4 (10kΩ divider) |
 | Status / Risk Indicator | On-board LED / AUX | GPIO | GPIO21 (active LOW) / GPIO6 (WS2812) |
 | Calibrate / Zero Button | Push Button | GPIO | GPIO44 (to GND) |
 | Battery Monitoring | Resistor Divider | ADC1 | GPIO7 (1:2 divider) |
