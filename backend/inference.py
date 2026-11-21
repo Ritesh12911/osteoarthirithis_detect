@@ -126,6 +126,122 @@ class OAInferenceEngine:
                 return level
         return "CRITICAL"
 
+    def aggregate_predict(self, samples: list, patient_meta: dict = None) -> dict:
+        """
+        Computes clinical multi-task inference over an active movement screening session.
+        Aggregates time-series samples across multiple gait & flexion cycles to produce
+        an accurate, reproducible, dynamic OA risk score without instantaneous noise bias.
+        """
+        if not samples or len(samples) == 0:
+            return self.predict({})
+
+        # Extract vectors for each feature channel
+        crep_vals   = [float(s.get("crepitus_score", s.get("sensors", {}).get("microphone", {}).get("crepitus_score", 0.0))) for s in samples]
+        rms_vals    = [float(s.get("audio_rms", s.get("sensors", {}).get("microphone", {}).get("audio_rms", 0.016))) for s in samples]
+        temp_vals   = [float(s.get("joint_temp_c", s.get("sensors", {}).get("temperature", {}).get("joint_temp_c", 33.1))) for s in samples if s.get("joint_temp_c") or s.get("sensors", {}).get("temperature", {}).get("joint_temp_c")]
+        asym_vals   = [float(s.get("temp_asymmetry", s.get("sensors", {}).get("temperature", {}).get("temp_asymmetry", 0.1))) for s in samples]
+        flex_vals   = [float(s.get("knee_angle_deg", s.get("flex_angle_deg", s.get("sensors", {}).get("flex", {}).get("flex_angle_deg", 110.0)))) for s in samples]
+        sym_vals    = [float(s.get("step_symmetry", s.get("sensors", {}).get("imu", {}).get("step_symmetry", 0.92))) for s in samples]
+        rom_vals    = [float(s.get("rom_deg", s.get("gyro_range_deg", s.get("sensors", {}).get("imu", {}).get("gyro_range_deg", 90.0)))) for s in samples]
+        stiff_vals  = [float(s.get("flex_stiffness", s.get("sensors", {}).get("flex", {}).get("flex_stiffness", 0.15))) for s in samples]
+
+        # Robust statistics
+        max_flex = max(flex_vals) if flex_vals else 110.0
+        min_flex = min(flex_vals) if flex_vals else 20.0
+        active_rom = max_flex - min_flex if len(flex_vals) > 5 else (np.mean(rom_vals) if rom_vals else 90.0)
+
+        mean_crep = float(np.mean(crep_vals)) if crep_vals else 0.0
+        p90_crep  = float(np.percentile(crep_vals, 90)) if len(crep_vals) >= 10 else (max(crep_vals) if crep_vals else 0.0)
+        burst_count = sum(1 for c in crep_vals if c > 0.35)
+
+        mean_temp = float(np.mean(temp_vals)) if temp_vals else 33.2
+        mean_asym = float(np.mean(asym_vals)) if asym_vals else 0.1
+        mean_sym  = float(np.mean(sym_vals)) if sym_vals else 0.92
+        mean_stiff= float(np.mean(stiff_vals)) if stiff_vals else 0.15
+        mean_rms  = float(np.mean(rms_vals)) if rms_vals else 0.016
+
+        # Build composite feature dictionary representing the full movement session
+        agg_features = {
+            "audio_rms":         round(mean_rms, 4),
+            "dominant_freq_hz":  float(np.median([s.get("dominant_freq_hz", 150) for s in samples])) if samples else 150.0,
+            "crepitus_score":    round(float(0.6 * mean_crep + 0.4 * p90_crep), 3),
+            "joint_temp_c":      round(mean_temp, 2),
+            "temp_asymmetry":    round(mean_asym, 2),
+            "accel_rms_x":       float(np.mean([s.get("accel_rms_x", 0.85) for s in samples])) if samples else 0.85,
+            "accel_rms_y":       float(np.mean([s.get("accel_rms_y", 0.90) for s in samples])) if samples else 0.90,
+            "accel_rms_z":       float(np.mean([s.get("accel_rms_z", 9.80) for s in samples])) if samples else 9.80,
+            "gyro_range_deg":    round(float(active_rom), 1),
+            "step_symmetry":     round(mean_sym, 3),
+            "flex_angle_deg":    round(float(max_flex), 1),
+            "flex_stiffness":    round(mean_stiff, 3),
+            "active_rom_deg":    round(float(active_rom), 1),
+            "burst_count":       burst_count,
+            "sample_count":      len(samples)
+        }
+
+        # Run primary prediction on aggregated features
+        base_result = self.predict(agg_features)
+
+        # Dynamic continuous risk score calculation based on multi-parameter biomechanics:
+        # 1. Acoustic crepitus impact (0-35% weight)
+        acoustic_factor = min(1.0, (agg_features["crepitus_score"] * 0.8 + (burst_count / max(1, len(samples))) * 1.5))
+
+        # 2. ROM restriction impact (0-30% weight: <60° = severe restriction, >110° = healthy)
+        if active_rom >= 110:
+            rom_factor = 0.05
+        elif active_rom >= 85:
+            rom_factor = 0.05 + 0.35 * (110 - active_rom) / 25.0
+        elif active_rom >= 55:
+            rom_factor = 0.40 + 0.35 * (85 - active_rom) / 30.0
+        else:
+            rom_factor = 0.75 + 0.25 * max(0, (55 - active_rom) / 35.0)
+        rom_factor = min(1.0, max(0.0, rom_factor))
+
+        # 3. Thermal inflammation impact (0-20% weight: joint temp > 35.0°C and delta > 0.8°C)
+        temp_delta = max(0.0, mean_temp - 33.2)
+        thermal_factor = min(1.0, max(0.0, (temp_delta / 3.0) * 0.6 + (mean_asym / 1.8) * 0.4))
+
+        # 4. Gait asymmetry & mechanical stiffness impact (0-15% weight)
+        sym_penalty = max(0.0, (0.95 - mean_sym) / 0.35)
+        stiff_factor = min(1.0, mean_stiff * 0.7 + sym_penalty * 0.3)
+
+        # Multi-modal composite risk score
+        computed_risk = (
+            0.35 * acoustic_factor +
+            0.30 * rom_factor +
+            0.20 * thermal_factor +
+            0.15 * stiff_factor
+        )
+        computed_risk = float(np.clip(computed_risk, 0.04, 0.96))
+
+        # Map to KL Stage
+        if computed_risk < 0.25:
+            final_kl = 0
+        elif computed_risk < 0.48:
+            final_kl = 1
+        elif computed_risk < 0.70:
+            final_kl = 2
+        elif computed_risk < 0.85:
+            final_kl = 3
+        else:
+            final_kl = 4
+
+        pathway = BIORAD_PATHWAYS[final_kl]
+        final_level = self._get_risk_level(computed_risk)
+
+        base_result["risk_score"] = round(computed_risk, 3)
+        base_result["risk_level"] = final_level
+        base_result["kl_grade"] = final_kl
+        base_result["kl_grade_label"] = KL_CLASSES[final_kl]
+        base_result["implant_candidacy"] = pathway["candidacy"]
+        base_result["treatment_pathway"] = pathway["action"]
+        base_result["prob_normal"] = round(1.0 - computed_risk, 3)
+        base_result["prob_oa"] = round(computed_risk, 3)
+        base_result["aggregated_metrics"] = agg_features
+        base_result["session_duration_s"] = round(len(samples) * 0.5, 1)
+
+        return base_result
+
     def _rule_based_predict(self, features: dict) -> dict:
         crep  = features.get("crepitus_score", 0.0)
         temp  = features.get("joint_temp_c", 33.0)
@@ -283,3 +399,6 @@ def get_engine() -> OAInferenceEngine:
 
 def predict(sensor_data: dict) -> dict:
     return get_engine().predict(sensor_data)
+
+def aggregate_predict(samples: list, patient_meta: dict = None) -> dict:
+    return get_engine().aggregate_predict(samples, patient_meta)

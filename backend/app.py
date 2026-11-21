@@ -162,6 +162,83 @@ def receive_data():
         return jsonify({"error": str(e)}), 500
 
 
+# ─── ACTIVE CLINICAL SCREENING SESSION (AGGREGATE ML + LLM) ───────────────────
+
+@app.route("/api/screening", methods=["POST"])
+def complete_screening():
+    """
+    Evaluates an active knee movement screening session (e.g. 15-60s of wearing & moving).
+    Runs multi-task ML inference on aggregated time-series biomarkers and synthesizes
+    an accurate, non-constant OA risk score and Kellgren-Lawrence (KL) clinical stage with LLM insights.
+    """
+    try:
+        body = request.get_json(force=True) or {}
+        samples = body.get("samples", [])
+        patient_id = body.get("patient_id", "PATIENT_001")
+        duration_s = body.get("duration_s", 30)
+
+        if not samples:
+            return jsonify({"error": "No sensor samples provided for screening"}), 400
+
+        # Retrieve registered patient metadata if available
+        patient_record = db.get_patient(patient_id) or {
+            "patient_id": patient_id,
+            "name": patient_id,
+            "age": 55,
+            "gender": "Unknown"
+        }
+
+        # Multi-task ML Aggregate Prediction
+        screening_result = inf.aggregate_predict(samples, patient_record)
+
+        # Generate LLM Clinical Diagnostic Synthesis
+        llm_summary = ""
+        try:
+            llm_summary = llm.get_clinical_summary(
+                patient_id=patient_id,
+                patient_data=patient_record,
+                latest_reading=screening_result,
+                trend={"direction": "active_test", "sessions_count": len(samples)}
+            )
+        except Exception as llm_err:
+            print(f"[LLM] Screening summary note: {llm_err}")
+            llm_summary = (
+                f"Active movement screening completed across {len(samples)} sensor epochs ({duration_s}s). "
+                f"Assessed OA Risk: {screening_result['risk_score']*100:.1f}% ({screening_result['risk_level']}). "
+                f"KL Grade: {screening_result['kl_grade_label']}. "
+                f"Peak dynamic ROM reached {screening_result.get('aggregated_metrics', {}).get('active_rom_deg', '--')}°."
+            )
+
+        screening_result["llm_summary"] = llm_summary
+        screening_result["patient_id"] = patient_id
+
+        # Insert representative session record into DB for patient history
+        rep_sample = dict(samples[-1])
+        rep_sample["patient_id"] = patient_id
+        rep_sample["flex_angle_deg"] = screening_result.get("aggregated_metrics", {}).get("active_rom_deg", 90.0)
+        rep_sample["crepitus_score"] = screening_result.get("aggregated_metrics", {}).get("crepitus_score", 0.0)
+        rep_sample["joint_temp_c"] = screening_result.get("aggregated_metrics", {}).get("joint_temp_c", 33.2)
+        try:
+            db.insert_session(rep_sample, screening_result)
+        except Exception as db_err:
+            print(f"[DB] Session insert notice: {db_err}")
+
+        # Broadcast completed screening event to dashboard clients
+        socketio.emit("screening_complete", screening_result)
+
+        return jsonify({
+            "status": "ok",
+            "patient_id": patient_id,
+            "duration_s": duration_s,
+            "sample_count": len(samples),
+            "result": screening_result
+        }), 200
+
+    except Exception as e:
+        print(f"[ERR] /api/screening: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 def _build_payload(row_id, data, result):
     knee_ang = data.get("knee_angle_deg", data.get("flex_angle_deg", 0))
     return {

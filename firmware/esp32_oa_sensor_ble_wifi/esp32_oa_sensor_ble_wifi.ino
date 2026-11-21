@@ -894,6 +894,8 @@ static void telemetryService() {
   doc["gyro_range_deg"] = r2(rom);          doc["rom_deg"] = r2(rom);
   doc["step_symmetry"] = r2(regularity);    doc["cadence_spm"] = r2(cadence);
   doc["pitch"] = r2(prim ? prim->pitch : 0); doc["roll"] = r2(prim ? prim->roll : 0); doc["yaw"] = r2(prim ? prim->yaw : 0);
+  doc["thigh_pitch"] = r2(imuT.pitch); doc["thigh_roll"] = r2(imuT.roll); doc["thigh_yaw"] = r2(imuT.yaw);
+  doc["shank_pitch"] = r2(imuS.pitch); doc["shank_roll"] = r2(imuS.roll); doc["shank_yaw"] = r2(imuS.yaw);
   doc["knee_angle_deg"] = r2(kneeBest);
   doc["flex_angle_deg"] = r2(kneeBest);     doc["flex_stiffness"] = r2(stiffness);
   doc["thigh_angle_deg"] = r2(imuT.theta);  doc["shank_angle_deg"] = r2(imuS.theta);

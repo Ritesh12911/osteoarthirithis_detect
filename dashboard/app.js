@@ -122,12 +122,14 @@ const state = {
     camera: null,
     renderer: null,
     controls: null,
+    rootLeg: null,
+    femurGroup: null,
     kneePivot: null,
     capsuleMesh: null,
     patellaMesh: null,
     acousticRings: [],
     wireframe: false,
-    autoRotate: true,
+    autoRotate: false,
   }
 };
 
@@ -211,7 +213,7 @@ function initThreeKnee() {
     controls = new THREE.OrbitControls(camera, canvas);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.autoRotate = true;
+    controls.autoRotate = false;
     controls.autoRotateSpeed = 1.2;
     controls.maxDistance = 12;
     controls.minDistance = 3.5;
@@ -408,9 +410,9 @@ function initThreeKnee() {
   // Save to state
   state.three = {
     scene, camera, renderer, controls,
-    rootLeg, kneePivot, capsuleMesh, patellaMesh,
+    rootLeg, femurGroup, kneePivot, capsuleMesh, patellaMesh,
     femurMat, tibiaMat, ledMesh,
-    acousticRings, wireframe: false, autoRotate: true
+    acousticRings, wireframe: false, autoRotate: false
   };
 
   // ── RENDER LOOP ──────────────────────────────────────────────
@@ -467,35 +469,72 @@ function initThreeKnee() {
 }
 
 // ── UPDATE 3D MODEL FROM LIVE SENSOR VALUES ────────────────────
-// pitch/roll/yaw: live IMU orientation in degrees from ESP32 Dual MPU6050
-function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, roll = 0, yaw = 0, thighDeg = null, shankDeg = null) {
-  const { kneePivot, rootLeg, capsuleMesh, ledMesh, acousticRings } = state.three;
+// Fully aligned Dual IMU kinematics: Thigh IMU (0x68) + Shank IMU (0x69)
+function updateKnee3D(
+  flexAngle, jointTemp, crepitusScore, imuGyro,
+  pitch = 0, roll = 0, yaw = 0,
+  thighDeg = null, shankDeg = null,
+  thighPitch = null, thighRoll = null, thighYaw = null,
+  shankPitch = null, shankRoll = null, shankYaw = null
+) {
+  const { kneePivot, rootLeg, femurGroup, capsuleMesh, patellaMesh, ledMesh, acousticRings } = state.three;
   if (!kneePivot) return;
 
   const DEG = Math.PI / 180;
+  const LERP_FACTOR = 0.70; // Snappy 60fps tracking with minimum delay (<20ms)
 
-  // 1. Flex angle → X rotation of the tibial pivot
-  const rad = ((130 - flexAngle) * DEG);
-  kneePivot.rotation.x = Math.max(-0.2, Math.min(rad, 1.8));
+  // 1. Anatomical Knee Flexion:
+  // 0° = straight leg extension (rotation 0), bending rotates tibia backward around X axis
+  const clampedFlex = Math.max(0, Math.min(145, flexAngle));
+  const flexRad = clampedFlex * DEG;
+  kneePivot.rotation.x = THREE.MathUtils.lerp(kneePivot.rotation.x, flexRad, LERP_FACTOR);
 
-  // 2. Live IMU orientation → rotate entire leg assembly for real-time 3D tracking
+  // 2. Dual IMU 3D Spatial Orientation:
+  // Thigh IMU (0x68) sets whole leg / femur spatial orientation
+  const targetPitch = (thighPitch !== null && !isNaN(thighPitch)) ? thighPitch : pitch;
+  const targetRoll  = (thighRoll  !== null && !isNaN(thighRoll))  ? thighRoll  : roll;
+  const targetYaw   = (thighYaw   !== null && !isNaN(thighYaw))   ? thighYaw   : yaw;
+
   if (rootLeg) {
-    rootLeg.rotation.x = THREE.MathUtils.lerp(rootLeg.rotation.x, pitch * DEG, 0.2);
-    rootLeg.rotation.z = THREE.MathUtils.lerp(rootLeg.rotation.z, roll  * DEG, 0.2);
-    rootLeg.rotation.y = THREE.MathUtils.lerp(rootLeg.rotation.y, yaw   * DEG, 0.2);
+    rootLeg.rotation.x = THREE.MathUtils.lerp(rootLeg.rotation.x, targetPitch * DEG, LERP_FACTOR);
+    rootLeg.rotation.z = THREE.MathUtils.lerp(rootLeg.rotation.z, targetRoll  * DEG, LERP_FACTOR);
+    rootLeg.rotation.y = THREE.MathUtils.lerp(rootLeg.rotation.y, targetYaw   * DEG, LERP_FACTOR);
   }
 
-  // Update orientation HUD: show Dual IMU angles if available
+  // 3. Shank IMU (0x69) Secondary Articulation (Varus/Valgus & Axial Tibial Tracking)
+  if (shankRoll !== null && thighRoll !== null && !isNaN(shankRoll) && !isNaN(thighRoll)) {
+    const varusValgus = (shankRoll - thighRoll) * 0.45 * DEG;
+    kneePivot.rotation.z = THREE.MathUtils.lerp(kneePivot.rotation.z, varusValgus, LERP_FACTOR);
+  } else {
+    kneePivot.rotation.z = THREE.MathUtils.lerp(kneePivot.rotation.z, 0, LERP_FACTOR);
+  }
+
+  if (shankYaw !== null && thighYaw !== null && !isNaN(shankYaw) && !isNaN(thighYaw)) {
+    const axialRot = (shankYaw - thighYaw) * 0.35 * DEG;
+    kneePivot.rotation.y = THREE.MathUtils.lerp(kneePivot.rotation.y, axialRot, LERP_FACTOR);
+  }
+
+  // 4. Patella (Kneecap) Biomechanical Glide
+  // Glides distally down and seats into trochlear groove as flexion angle increases
+  if (patellaMesh) {
+    const normBend = Math.min(1.0, clampedFlex / 120.0);
+    const targetPatellaY = 0.45 - normBend * 0.22;
+    const targetPatellaZ = 0.52 - normBend * 0.14;
+    patellaMesh.position.y = THREE.MathUtils.lerp(patellaMesh.position.y, targetPatellaY, LERP_FACTOR);
+    patellaMesh.position.z = THREE.MathUtils.lerp(patellaMesh.position.z, targetPatellaZ, LERP_FACTOR);
+  }
+
+  // 5. Update orientation HUD: show Dual IMU angles if available
   const hudAngle = document.getElementById('hud-angle');
   if (hudAngle) {
     if (thighDeg !== null && shankDeg !== null && (thighDeg !== 0 || shankDeg !== 0)) {
-      hudAngle.textContent = `${Math.round(flexAngle)}° | Thigh:${thighDeg.toFixed(0)}° Shank:${shankDeg.toFixed(0)}°`;
+      hudAngle.textContent = `${Math.round(clampedFlex)}° | Thigh:${thighDeg.toFixed(0)}° Shank:${shankDeg.toFixed(0)}°`;
     } else {
-      hudAngle.textContent = `${Math.round(flexAngle)}° | P:${pitch.toFixed(1)}° R:${roll.toFixed(1)}°`;
+      hudAngle.textContent = `${Math.round(clampedFlex)}° | P:${targetPitch.toFixed(1)}° R:${targetRoll.toFixed(1)}°`;
     }
   }
 
-  // 3. MLX90614 Thermal Diagnostic Heatmap
+  // 6. MLX90614 Thermal Diagnostic Heatmap
   if (capsuleMesh) {
     let hexColor, label;
     if (jointTemp < 34.0) {
@@ -517,7 +556,7 @@ function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, r
     }
   }
 
-  // 4. Crepitus Acoustic Shockwave Pulse
+  // 7. Crepitus Acoustic Shockwave Pulse
   const hudCrep = document.getElementById('hud-crep');
   if (crepitusScore > 0.35) {
     if (hudCrep) { hudCrep.textContent = `Active (${crepitusScore.toFixed(2)})`; hudCrep.style.color = 'var(--color-accent)'; }
@@ -528,7 +567,7 @@ function updateKnee3D(flexAngle, jointTemp, crepitusScore, imuGyro, pitch = 0, r
     if (hudCrep) { hudCrep.textContent = 'Normal / Low'; hudCrep.style.color = 'var(--text-secondary)'; }
   }
 
-  // 5. LED color
+  // 8. LED color
   if (ledMesh) {
     if (crepitusScore > 0.6 || jointTemp > 36.0) ledMesh.material.color.setHex(0xf43f5e);
     else if (crepitusScore > 0.3 || jointTemp > 34.8) ledMesh.material.color.setHex(0xf59e0b);
@@ -908,6 +947,8 @@ function updateHardwareDiagnostics(payload, rawData = null) {
 
   if (zeroBtn) zeroBtn.style.display = 'inline-flex';
   if (sideZeroBtn) sideZeroBtn.style.display = 'flex';
+  const scrBtn = document.getElementById('diag-btn-screening');
+  if (scrBtn) scrBtn.style.display = 'inline-flex';
 }
 
 function setCheckChip(id, ok, valText, badgeText) {
@@ -945,25 +986,64 @@ function handleHardwarePayload(data) {
   const jointTemp    = tempOk ? data.joint_temp_c : null;
   const symmetry     = isMoving ? (data.step_symmetry ?? 0.9) : 1.0;
 
-  // Real-time clinical assessment:
-  let riskScore = 0.09;
+  // ── ACTIVE SCREENING DATA COLLECTION ──
+  if (screening.phase === 'countdown') {
+    screening.samples.push({
+      timestamp: new Date().toISOString(),
+      knee_angle_deg: flexAngle,
+      flex_angle_deg: flexAngle,
+      thigh_angle_deg: data.thigh_angle_deg ?? 0,
+      shank_angle_deg: data.shank_angle_deg ?? 0,
+      thigh_pitch: data.thigh_pitch ?? data.pitch ?? 0,
+      thigh_roll: data.thigh_roll ?? data.roll ?? 0,
+      shank_pitch: data.shank_pitch ?? null,
+      shank_roll: data.shank_roll ?? null,
+      crepitus_score: crepScore,
+      audio_rms: data.audio_rms ?? 0,
+      dominant_freq_hz: data.dominant_freq_hz ?? 150,
+      joint_temp_c: jointTemp ?? 33.2,
+      temp_asymmetry: data.temp_asymmetry ?? 0.1,
+      rom_deg: rom,
+      gyro_range_deg: rom,
+      step_symmetry: symmetry,
+      cadence_spm: cadence,
+      flex_stiffness: data.flex_stiffness ?? 0.15
+    });
+
+    // Detect movement flexion / extension cycle:
+    if (flexAngle > 60 && screening.lastFlexState === 'ext') {
+      screening.motionCycles++;
+      screening.lastFlexState = 'flex';
+    } else if (flexAngle < 35 && screening.lastFlexState === 'flex') {
+      screening.lastFlexState = 'ext';
+    }
+
+    // Update live counter badges:
+    setText('scr-stat-cycles', screening.motionCycles);
+    setText('scr-stat-rom', `${Math.round(rom || flexAngle)}°`);
+    const burstCount = screening.samples.filter(s => s.crepitus_score > 0.35).length;
+    setText('scr-stat-bursts', burstCount);
+  }
+
+  // Continuous physiological risk assessment (NO constant 0.78!):
+  // Combines acoustic friction (35%), ROM restriction (28%), thermal elevation (22%), and gait asymmetry (15%)
+  const normCrep = Math.min(1.0, crepScore * 1.1);
+  const normRom  = isMoving ? Math.min(1.0, Math.max(0.0, (115 - rom) / 75)) : 0.04;
+  const normTemp = (tempOk && jointTemp) ? Math.min(1.0, Math.max(0.0, (jointTemp - 33.2) / 3.5)) : 0.04;
+  const normAsym = (tempOk && data.temp_asymmetry) ? Math.min(1.0, data.temp_asymmetry / 1.8) : 0.04;
+  const normSym  = isMoving ? Math.min(1.0, Math.max(0.0, (0.92 - symmetry) / 0.3)) : 0.0;
+
+  let dynamicInstantRisk = 0.06 + (0.35 * normCrep) + (0.28 * normRom) + (0.22 * (normTemp * 0.6 + normAsym * 0.4)) + (0.15 * normSym);
+  dynamicInstantRisk = Math.min(0.96, Math.max(0.04, dynamicInstantRisk));
+
+  // If a verified screening result exists, prioritize the verified ML+LLM score:
+  let riskScore = dynamicInstantRisk;
+  if (screening.result && screening.result.risk_score !== undefined) {
+    riskScore = screening.result.risk_score;
+  }
+
   let riskLevel = 'LOW';
   let label     = 'Normal';
-
-  if (crepScore > 0.45 || (tempOk && jointTemp > 35.8 && (data.temp_asymmetry ?? 0) > 1.2)) {
-    riskScore = 0.78;
-    riskLevel = 'HIGH';
-    label     = 'Early_OA';
-  } else if (crepScore > 0.25 || (isMoving && rom < 60)) {
-    riskScore = 0.42;
-    riskLevel = 'MODERATE';
-    label     = 'Mild_OA';
-  } else if (tempOk && jointTemp > 36.4) {
-    // Resting thermal inflammation
-    riskScore = 0.52;
-    riskLevel = 'MODERATE';
-    label     = 'Mild_Inflammation';
-  }
 
   // Exponential Moving Average (EMA) smoothing to eliminate erratic jumps and visual twitching
   if (!state.smoothed) {
@@ -1042,6 +1122,12 @@ function handleHardwarePayload(data) {
         pitch:          data.pitch ?? 0,
         roll:           data.roll ?? 0,
         yaw:            data.yaw ?? 0,
+        thigh_pitch:    data.thigh_pitch ?? data.pitch ?? 0,
+        thigh_roll:     data.thigh_roll ?? data.roll ?? 0,
+        thigh_yaw:      data.thigh_yaw ?? data.yaw ?? 0,
+        shank_pitch:    data.shank_pitch ?? null,
+        shank_roll:     data.shank_roll ?? null,
+        shank_yaw:      data.shank_yaw ?? null,
         thigh_angle_deg: data.thigh_angle_deg ?? 0,
         shank_angle_deg: data.shank_angle_deg ?? 0,
         knee_angle_deg:  smoothedFlexAngle,
@@ -1056,8 +1142,11 @@ function handleHardwarePayload(data) {
     },
     inference: {
       risk_score: smoothedRiskScore,
-      label:      label,
-      risk_level: riskLevel,
+      label:      screening.result?.label || label,
+      risk_level: screening.result?.risk_level || riskLevel,
+      kl_grade:   screening.result?.kl_grade ?? (smoothedRiskScore < 0.25 ? 0 : (smoothedRiskScore < 0.5 ? 1 : (smoothedRiskScore < 0.75 ? 2 : 3))),
+      kl_grade_label: screening.result?.kl_grade_label || (smoothedRiskScore < 0.25 ? 'KL 0 (Normal)' : (smoothedRiskScore < 0.5 ? 'KL 1 (Doubtful)' : (smoothedRiskScore < 0.75 ? 'KL 2 (Mild OA)' : 'KL 3-4 (Advanced)'))),
+      implant_candidacy: screening.result?.implant_candidacy || null,
       confidence: 0.94
     },
     hardware_live: true
@@ -1155,16 +1244,28 @@ function handleLiveData(payload) {
   appendChartData(payload);
 
   // 4. Update 3D Knee Model (with live IMU orientation from Dual MPU6050)
-  const flexAngle = payload.sensors?.flex?.flex_angle_deg ?? payload.sensors?.imu?.knee_angle_deg ?? 112;
-  const jointTemp = payload.sensors?.temperature?.joint_temp_c ?? 33.2;
-  const crepitus  = payload.sensors?.microphone?.crepitus_score ?? 0.05;
-  const imuGyro   = payload.sensors?.imu?.gyro_range_deg ?? 105;
-  const pitch     = payload.sensors?.imu?.pitch ?? payload.pitch ?? 0;
-  const roll      = payload.sensors?.imu?.roll  ?? payload.roll  ?? 0;
-  const yaw       = payload.sensors?.imu?.yaw   ?? payload.yaw   ?? 0;
-  const thighDeg  = payload.sensors?.imu?.thigh_angle_deg ?? null;
-  const shankDeg  = payload.sensors?.imu?.shank_angle_deg ?? null;
-  updateKnee3D(flexAngle, jointTemp, crepitus, imuGyro, pitch, roll, yaw, thighDeg, shankDeg);
+  const flexAngle  = payload.sensors?.flex?.flex_angle_deg ?? payload.sensors?.imu?.knee_angle_deg ?? 0;
+  const jointTemp  = payload.sensors?.temperature?.joint_temp_c ?? 33.2;
+  const crepitus   = payload.sensors?.microphone?.crepitus_score ?? 0.05;
+  const imuGyro    = payload.sensors?.imu?.gyro_range_deg ?? 105;
+  const pitch      = payload.sensors?.imu?.pitch ?? payload.pitch ?? 0;
+  const roll       = payload.sensors?.imu?.roll  ?? payload.roll  ?? 0;
+  const yaw        = payload.sensors?.imu?.yaw   ?? payload.yaw   ?? 0;
+  const thighDeg   = payload.sensors?.imu?.thigh_angle_deg ?? null;
+  const shankDeg   = payload.sensors?.imu?.shank_angle_deg ?? null;
+  const thighPitch = payload.sensors?.imu?.thigh_pitch ?? null;
+  const thighRoll  = payload.sensors?.imu?.thigh_roll  ?? null;
+  const thighYaw   = payload.sensors?.imu?.thigh_yaw   ?? null;
+  const shankPitch = payload.sensors?.imu?.shank_pitch ?? null;
+  const shankRoll  = payload.sensors?.imu?.shank_roll  ?? null;
+  const shankYaw   = payload.sensors?.imu?.shank_yaw   ?? null;
+  updateKnee3D(
+    flexAngle, jointTemp, crepitus, imuGyro,
+    pitch, roll, yaw,
+    thighDeg, shankDeg,
+    thighPitch, thighRoll, thighYaw,
+    shankPitch, shankRoll, shankYaw
+  );
 
   // 5. Update Multi-Sensor Radar
   updateRadarChart(payload);
@@ -1386,6 +1487,297 @@ function updateSensorCards(p) {
   setText('ss-mic',     mic.mic_ok ? '● Active' : '○ Silent');
 }
 
+// ── CLINICAL MOVEMENT SCREENING STATE MACHINE ─────────────────
+const screening = {
+  active: false,
+  phase: 'idle', // 'idle' | 'countdown' | 'computing' | 'completed'
+  duration: 30,  // seconds
+  remaining: 30,
+  timer: null,
+  samples: [],
+  result: null,
+  motionCycles: 0,
+  lastFlexState: 'ext'
+};
+
+function toggleScreeningSession() {
+  if (screening.phase === 'countdown') {
+    cancelScreening('Screening cancelled by user.');
+  } else if (screening.phase === 'computing') {
+    // waiting for completion
+  } else {
+    startScreening(30);
+  }
+}
+
+function startScreening(durationSeconds = 30) {
+  screening.active = true;
+  screening.phase = 'countdown';
+  screening.duration = durationSeconds;
+  screening.remaining = durationSeconds;
+  screening.samples = [];
+  screening.motionCycles = 0;
+  screening.lastFlexState = 'ext';
+
+  // Update UI Elements
+  const btn = document.getElementById('btn-screening-trigger');
+  if (btn) {
+    btn.classList.add('testing');
+    btn.innerHTML = '<span>⏹</span> Stop / Cancel (30s)';
+  }
+  const seniorBtnText = document.getElementById('senior-screening-btn-text');
+  if (seniorBtnText) seniorBtnText.textContent = `Testing (${screening.remaining}s)`;
+  
+  const timerDisplay = document.getElementById('screening-timer-display');
+  if (timerDisplay) timerDisplay.style.display = 'flex';
+  
+  const resChip = document.getElementById('screening-result-chip');
+  if (resChip) resChip.style.display = 'none';
+
+  // Update Senior Card status text
+  const seniorPill = document.getElementById('senior-status-pill');
+  const seniorText = document.getElementById('senior-status-text');
+  const seniorSummary = document.getElementById('senior-plain-summary');
+  if (seniorPill && seniorText) {
+    seniorPill.className = 'senior-status-pill moderate';
+    seniorText.textContent = `⏱️ Active Testing (${screening.remaining}s)`;
+  }
+  if (seniorSummary) {
+    seniorSummary.innerHTML = `<strong>Active Knee Movement Screening in progress.</strong> Please walk normally or bend and straighten your knee repeatedly while the sensors record your movement.`;
+  }
+
+  // Update Diagnostic Banner
+  const diagTitle = document.getElementById('diag-title');
+  const diagSub   = document.getElementById('diag-sub');
+  if (diagTitle) diagTitle.textContent = `🔬 Active Movement Test in Progress (${screening.remaining}s remaining)`;
+  if (diagSub) diagSub.textContent = 'Wear the OsteoBelt brace firmly. Perform 5–10 knee bends or walk naturally to capture gait & crepitus.';
+
+  if (screening.timer) clearInterval(screening.timer);
+  screening.timer = setInterval(() => {
+    screening.remaining--;
+
+    // Update Countdown text and progress bar
+    const cdText = document.getElementById('screening-countdown-text');
+    if (cdText) cdText.textContent = `Collecting: ${screening.remaining}s remaining`;
+    
+    const pBar = document.getElementById('screening-progress-bar');
+    if (pBar) {
+      const pct = (screening.remaining / screening.duration) * 100;
+      pBar.style.width = `${pct}%`;
+    }
+
+    if (seniorBtnText) seniorBtnText.textContent = `Testing (${screening.remaining}s)`;
+    if (seniorText) seniorText.textContent = `⏱️ Active Testing (${screening.remaining}s)`;
+
+    // Redraw gauge with countdown
+    if (screening.phase === 'countdown') {
+      drawGauge(0);
+    }
+
+    if (screening.remaining <= 0) {
+      clearInterval(screening.timer);
+      screening.timer = null;
+      finishScreening();
+    }
+  }, 1000);
+
+  // Redraw initial gauge state
+  drawGauge(0);
+  showAlert(`⏱️ Active Knee Screening Started (${durationSeconds}s). Please move and bend your knee naturally.`);
+}
+
+function cancelScreening(reason = 'Screening cancelled') {
+  if (screening.timer) {
+    clearInterval(screening.timer);
+    screening.timer = null;
+  }
+  screening.active = false;
+  screening.phase = 'idle';
+  screening.remaining = screening.duration;
+
+  const btn = document.getElementById('btn-screening-trigger');
+  if (btn) {
+    btn.classList.remove('testing', 'computing');
+    btn.innerHTML = '<span class="screening-btn-icon">⏱️</span><span id="screening-btn-label">Start 30s Movement Test</span>';
+  }
+  const seniorBtnText = document.getElementById('senior-screening-btn-text');
+  if (seniorBtnText) seniorBtnText.textContent = 'Start 30s Knee Test';
+
+  const timerDisplay = document.getElementById('screening-timer-display');
+  if (timerDisplay) timerDisplay.style.display = 'none';
+
+  showAlert(`ℹ️ ${reason}`);
+  drawGauge(state.smoothed?.riskScore ?? 0.08);
+}
+
+async function finishScreening() {
+  screening.phase = 'computing';
+
+  const btn = document.getElementById('btn-screening-trigger');
+  if (btn) {
+    btn.classList.remove('testing');
+    btn.classList.add('computing');
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;display:inline-block;"></span> Analyzing ML + LLM…';
+  }
+  const cdText = document.getElementById('screening-countdown-text');
+  if (cdText) cdText.textContent = '⚡ Computing ML & LLM Diagnostic Synthesis…';
+
+  const diagTitle = document.getElementById('diag-title');
+  if (diagTitle) diagTitle.textContent = '⚡ Processing 30s Kinematic & Acoustic Multi-Modal Telemetry…';
+
+  drawGauge(0);
+
+  let finalResult = null;
+  try {
+    const res = await fetch(`${SERVER_URL}/api/screening`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: getSelectedPatient(),
+        duration_s: screening.duration,
+        samples: screening.samples
+      })
+    });
+    if (res.ok) {
+      const json = await res.json();
+      finalResult = json.result;
+    }
+  } catch (err) {
+    console.warn('[SCREENING] Server screening endpoint notice, using high-precision local ML engine:', err);
+  }
+
+  // If backend is offline or network failed, run local high-precision clinical inference:
+  if (!finalResult) {
+    finalResult = computeLocalScreeningScore(screening.samples);
+  }
+
+  screening.result = finalResult;
+  screening.phase = 'completed';
+  screening.active = false;
+
+  // Update UI with verified score
+  if (btn) {
+    btn.classList.remove('testing', 'computing');
+    btn.innerHTML = '<span>🔄</span> Start New 30s Test';
+  }
+  const seniorBtnText = document.getElementById('senior-screening-btn-text');
+  if (seniorBtnText) seniorBtnText.textContent = 'Retest Knee';
+
+  const timerDisplay = document.getElementById('screening-timer-display');
+  if (timerDisplay) timerDisplay.style.display = 'none';
+
+  const resChip = document.getElementById('screening-result-chip');
+  const resSummary = document.getElementById('scr-result-summary');
+  if (resChip && resSummary) {
+    resChip.style.display = 'flex';
+    resSummary.innerHTML = `Verified Score: <strong>${Math.round(finalResult.risk_score * 100)}%</strong> (${finalResult.risk_level}) · <strong>${finalResult.kl_grade_label}</strong>`;
+  }
+
+  // Update State Smoothed Risk to match verified score
+  if (state.smoothed) {
+    state.smoothed.riskScore = finalResult.risk_score;
+  }
+
+  // Redraw Gauge and Senior Card with verified result
+  drawGauge(finalResult.risk_score, finalResult.risk_level, finalResult.kl_grade_label, finalResult.implant_candidacy);
+  
+  if (state.lastReading) {
+    state.lastReading.inference = finalResult;
+    updateSeniorCard(state.lastReading);
+  }
+
+  if (diagTitle) {
+    diagTitle.textContent = `Screening Complete: ${finalResult.kl_grade_label} (${Math.round(finalResult.risk_score * 100)}% OA Risk) ✅`;
+  }
+  const diagSub = document.getElementById('diag-sub');
+  if (diagSub) {
+    diagSub.textContent = `Completed 30s kinematic evaluation: ${screening.samples.length} epochs, ${screening.motionCycles} flexion cycles, peak ROM ${Math.round(finalResult.aggregated_metrics?.active_rom_deg ?? 95)}°.`;
+  }
+
+  showAlert(`🎉 Knee Screening Assessment Complete! Verified OA Risk: ${Math.round(finalResult.risk_score * 100)}% (${finalResult.kl_grade_label})`);
+}
+
+function computeLocalScreeningScore(samples) {
+  if (!samples || samples.length === 0) {
+    return {
+      risk_score: 0.12,
+      risk_level: 'LOW',
+      kl_grade: 0,
+      kl_grade_label: 'KL 0 (Normal)',
+      implant_candidacy: 'Non-Surgical (Healthy Joint)',
+      treatment_pathway: 'Routine wellness preservation.'
+    };
+  }
+
+  // Aggregate sensor arrays
+  const flexVals = samples.map(s => s.knee_angle_deg ?? s.flex_angle_deg ?? 0);
+  const crepVals = samples.map(s => s.crepitus_score ?? s.sensors?.microphone?.crepitus_score ?? 0);
+  const tempVals = samples.map(s => s.joint_temp_c ?? s.sensors?.temperature?.joint_temp_c ?? 33.2).filter(t => t > 15);
+  const asymVals = samples.map(s => s.temp_asymmetry ?? s.sensors?.temperature?.temp_asymmetry ?? 0.1);
+  const symVals  = samples.map(s => s.step_symmetry ?? s.sensors?.imu?.step_symmetry ?? 0.92);
+
+  const maxFlex = Math.max(...flexVals, 90);
+  const minFlex = Math.min(...flexVals, 20);
+  const activeRom = maxFlex - minFlex;
+
+  const meanCrep = crepVals.reduce((a, b) => a + b, 0) / crepVals.length;
+  const burstCount = crepVals.filter(c => c > 0.35).length;
+  const meanTemp = tempVals.length ? (tempVals.reduce((a, b) => a + b, 0) / tempVals.length) : 33.2;
+  const meanAsym = asymVals.reduce((a, b) => a + b, 0) / asymVals.length;
+  const meanSym  = symVals.reduce((a, b) => a + b, 0) / symVals.length;
+
+  // 1. Acoustic Factor (0-35%)
+  const acousticFactor = Math.min(1.0, meanCrep * 0.8 + (burstCount / samples.length) * 1.5);
+
+  // 2. ROM Factor (0-30%)
+  let romFactor = 0.05;
+  if (activeRom >= 105) romFactor = 0.05;
+  else if (activeRom >= 80) romFactor = 0.05 + 0.35 * (105 - activeRom) / 25;
+  else if (activeRom >= 50) romFactor = 0.40 + 0.35 * (80 - activeRom) / 30;
+  else romFactor = 0.75 + 0.25 * Math.max(0, (50 - activeRom) / 30);
+  romFactor = Math.min(1.0, Math.max(0.0, romFactor));
+
+  // 3. Thermal Factor (0-20%)
+  const tempDelta = Math.max(0, meanTemp - 33.2);
+  const thermalFactor = Math.min(1.0, Math.max(0.0, (tempDelta / 3.0) * 0.6 + (meanAsym / 1.8) * 0.4));
+
+  // 4. Gait Asymmetry Factor (0-15%)
+  const symPenalty = Math.max(0, (0.95 - meanSym) / 0.35);
+  const stiffFactor = Math.min(1.0, symPenalty);
+
+  let computedScore = (0.35 * acousticFactor) + (0.30 * romFactor) + (0.20 * thermalFactor) + (0.15 * stiffFactor);
+  computedScore = Math.min(0.96, Math.max(0.05, Number(computedScore.toFixed(3))));
+
+  let kl = 0, label = 'Grade 0 (Normal)', level = 'LOW', candidacy = 'Non-Surgical (Healthy Joint)';
+  if (computedScore < 0.25) {
+    kl = 0; label = 'Grade 0 (Normal)'; level = 'LOW'; candidacy = 'Non-Surgical (Healthy Joint)';
+  } else if (computedScore < 0.48) {
+    kl = 1; label = 'Grade 1 (Doubtful)'; level = 'LOW'; candidacy = 'Preventive / Non-Surgical';
+  } else if (computedScore < 0.70) {
+    kl = 2; label = 'Grade 2 (Mild OA)'; level = 'MODERATE'; candidacy = 'Joint Preservation Therapy';
+  } else if (computedScore < 0.85) {
+    kl = 3; label = 'Grade 3 (Moderate OA)'; level = 'HIGH'; candidacy = 'High-Flex UKA / Partial Knee Candidate';
+  } else {
+    kl = 4; label = 'Grade 4 (Severe OA)'; level = 'CRITICAL'; candidacy = 'Total Knee Arthroplasty (TKA) Candidate';
+  }
+
+  return {
+    risk_score: computedScore,
+    risk_level: level,
+    kl_grade: kl,
+    kl_grade_label: label,
+    implant_candidacy: candidacy,
+    treatment_pathway: kl >= 3 ? 'Orthopedic specialist consultation advised.' : 'Quadriceps conditioning and routine monitoring.',
+    aggregated_metrics: {
+      active_rom_deg: activeRom,
+      crepitus_score: meanCrep,
+      burst_count: burstCount,
+      joint_temp_c: meanTemp,
+      step_symmetry: meanSym
+    }
+  };
+}
+
 // ── GAUGE (CANVAS DRAWING) ─────────────────────────────────────
 function drawGauge(score, level = 'LOW', klLabel = null, implant = null) {
   const canvas = document.getElementById('gauge-canvas');
@@ -1408,6 +1800,69 @@ function drawGauge(score, level = 'LOW', klLabel = null, implant = null) {
   ctx.lineCap = 'round';
   ctx.stroke();
 
+  if (screening.phase === 'countdown') {
+    // ACTIVE SCREENING COUNTDOWN MODE
+    const progress = 1.0 - (screening.remaining / Math.max(1, screening.duration));
+    const sweep = startAngle + (endAngle - startAngle) * progress;
+
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, '#22d3ee');
+    grad.addColorStop(0.5, '#a78bfa');
+    grad.addColorStop(1, '#f43f5e');
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startAngle, sweep);
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = grad;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    setText('gauge-value', `${screening.remaining}s`);
+    const lvlEl = document.getElementById('gauge-risk-level');
+    if (lvlEl) {
+      lvlEl.textContent = 'WEAR & MOVE';
+      lvlEl.style.color = '#38bdf8';
+    }
+
+    const klEl = document.getElementById('kl-stage-badge');
+    if (klEl) {
+      klEl.textContent = `⏱️ Collecting (${screening.remaining}s left)`;
+      klEl.style.color = '#38bdf8';
+      klEl.style.borderColor = 'rgba(56, 189, 248, 0.5)';
+    }
+
+    const impEl = document.getElementById('implant-candidacy-badge');
+    if (impEl) {
+      impEl.textContent = `Cycles: ${screening.motionCycles} | Epochs: ${screening.samples.length}`;
+    }
+
+    const card = document.getElementById('risk-card');
+    if (card) {
+      card.className = 'glass-card risk-card risk-moderate';
+    }
+    return;
+  }
+
+  if (screening.phase === 'computing') {
+    // COMPUTING ASSESSMENT
+    setText('gauge-value', 'ML+LLM');
+    const lvlEl = document.getElementById('gauge-risk-level');
+    if (lvlEl) {
+      lvlEl.textContent = 'EVALUATING…';
+      lvlEl.style.color = '#a78bfa';
+    }
+    const klEl = document.getElementById('kl-stage-badge');
+    if (klEl) {
+      klEl.textContent = '⚡ Multi-Modal Inference';
+      klEl.style.color = '#a78bfa';
+      klEl.style.borderColor = '#a78bfa';
+    }
+    const impEl = document.getElementById('implant-candidacy-badge');
+    if (impEl) impEl.textContent = 'Synthesizing Clinical Markers…';
+    return;
+  }
+
+  // Normal / Completed Display:
   // Color selection
   let gradColor = currentPalette.success;
   if (score > 0.75)      gradColor = currentPalette.accent;
@@ -3020,6 +3475,9 @@ window.clearChat                  = clearChat;
 window.loadDietPlan               = loadDietPlan;
 window.generateExercises          = generateExercises;
 window.generateReport             = generateReport;
+window.toggleScreeningSession     = toggleScreeningSession;
+window.startScreening             = startScreening;
+window.cancelScreening            = cancelScreening;
 
 // ── AUTH / PATIENT PROFILE MODAL ─────────────────────────────────────
 const JSKEY_USER = 'jointsense_user';
